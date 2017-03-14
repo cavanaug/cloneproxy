@@ -7,21 +7,22 @@
 // also be used to replicate traffic while moving across clouds.
 //
 // TODO:
-// - Create cli with simple reverse proxy (no clone)
+// -[Done] Create cli with simple reverse proxy (no clone)
+// -[Done] <<Testing/Checkpoint>>
+// -[Done] Add struct/interface model for ReverseCloneProxy
+// -[Done] Should use ServeHTTP which copies the req and calls ServeTargetHTTP
+// -[Done] <<Testing/Checkpoint>>
+// -[Done] Add sequential calling of ServeCloneHTTP
+// -[Done] <<Testing/Checkpoint>>
+// - Add logging similar to what was done for our custom teeproxy
 // - <<Testing/Checkpoint>>
-// - Add struct/interface model for ReverseCloneProxy
-// - Should use ServeHTTP which copies the req and calls ServeTargetHTTP
-// - <<Testing/Checkpoint>>
-// - Add sequential calling of ServeCloneHTTP
-// - <<Testing/Checkpoint>>
-// - Add logging similar to what was done for teeproxy
-// - <<Testing/Checkpoint>>
-// - Add async calling of ServeCloneHTTP
+// - Add async calling of ServeTargetHTTP & ServeCloneHTTP
 // - <<Testing/Checkpoint>>
 
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"flag"
@@ -57,7 +58,7 @@ var (
 	clone_url     = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
 	clone_timeout = flag.Int("b.timeout", 3, "timeout in seconds for clone (B-Side) traffic")
 	clone_rewrite = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
-	klone_percent = flag.Float64("p", 100.0, "float64 percentage of traffic to send to clone (B Side)")
+	clone_percent = flag.Float64("p", 100.0, "float64 percentage of traffic to send to clone (B Side)")
 )
 
 // **********************************************************************************
@@ -319,41 +320,42 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	p.copyResponse(rw, res.Body)
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
+	return
 }
 
 //
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
-func (p *ReverseClonedProxy) ServeCloneHTTP(rw http.ResponseWriter, req *http.Request) {
+func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request) {
 
 	transport := p.TransportClone
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
 
-	ctx := req.Context()
-	if cn, ok := rw.(http.CloseNotifier); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		defer cancel()
-		notifyChan := cn.CloseNotify()
-		go func() {
-			select {
-			case <-notifyChan:
-				cancel()
-			case <-ctx.Done():
-			}
-		}()
-	}
+	//ctx := req.Context()
+	//if cn, ok := rw.(http.CloseNotifier); ok {
+	//	var cancel context.CancelFunc
+	//	ctx, cancel = context.WithCancel(ctx)
+	//	defer cancel()
+	//	notifyChan := cn.CloseNotify()
+	//	go func() {
+	//		select {
+	//		case <-notifyChan:
+	//			cancel()
+	//		case <-ctx.Done():
+	//		}
+	//	}()
+	//}
 
 	outreq := new(http.Request)
 	*outreq = *req // includes shallow copies of maps, but okay
 	if req.ContentLength == 0 {
 		outreq.Body = nil // Issue 16036: nil Body for http.Transport retries
 	}
-	outreq = outreq.WithContext(ctx)
+	// if false:   outreq = outreq.WithContext(ctx)
 
-	p.Director(outreq)
+	p.DirectorClone(outreq)
 	outreq.Close = false
 
 	// We are modifying the same underlying map from req (shallow
@@ -402,7 +404,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(rw http.ResponseWriter, req *http.Re
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
-		rw.WriteHeader(http.StatusBadGateway)
+		//if false:   rw.WriteHeader(http.StatusBadGateway)
 		return
 	}
 
@@ -423,12 +425,12 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(rw http.ResponseWriter, req *http.Re
 	if p.ModifyResponse != nil {
 		if err := p.ModifyResponse(res); err != nil {
 			p.logf("http: proxy error: %v", err)
-			rw.WriteHeader(http.StatusBadGateway)
+			//if false:  rw.WriteHeader(http.StatusBadGateway)
 			return
 		}
 	}
 
-	copyHeader(rw.Header(), res.Header)
+	// if false:	copyHeader(rw.Header(), res.Header)
 
 	// The "Trailer" header isn't included in the Transport's response,
 	// at least for *http.Transport. Build it up from Trailer.
@@ -437,22 +439,28 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(rw http.ResponseWriter, req *http.Re
 		for k := range res.Trailer {
 			trailerKeys = append(trailerKeys, k)
 		}
-		rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
+		// if false:  rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
 	}
 
-	rw.WriteHeader(res.StatusCode)
-	if len(res.Trailer) > 0 {
+	// if false:   rw.WriteHeader(res.StatusCode)
+	if false && len(res.Trailer) > 0 {
 		// Force chunking if we saw a response trailer.
 		// This prevents net/http from calculating the length for short
 		// bodies and adding a Content-Length.
-		if fl, ok := rw.(http.Flusher); ok {
-			fl.Flush()
-		}
+		//if false:  if fl, ok := rw.(http.Flusher); ok {
+		//if false:  		fl.Flush()
+		//if false:  }
 	}
-	p.copyResponse(rw, res.Body)
+	// if false:   p.copyResponse(rw, res.Body)
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
-	copyHeader(rw.Header(), res.Trailer)
+	// if false:   copyHeader(rw.Header(), res.Trailer)
 }
+
+type nopCloser struct {
+	io.Reader
+}
+
+func (nopCloser) Close() error { return nil }
 
 //
 // Handle umbrella ServeHTTP interface
@@ -460,7 +468,25 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(rw http.ResponseWriter, req *http.Re
 // - Call each of ServeTargetHTTP & ServeCloneHTTP asynchronously
 // - Nothing else...
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	p.ServeTargetHTTP(rw, req)
+
+	b1 := new(bytes.Buffer)
+	b2 := new(bytes.Buffer)
+	w := io.MultiWriter(b1, b2)
+	io.Copy(w, req.Body)
+
+	target_req := new(http.Request)
+	*target_req = *req
+	target_req.Body = nopCloser{b1}
+
+	clone_req := new(http.Request)
+	*clone_req = *req
+	clone_req.Body = nopCloser{b2}
+
+	defer req.Body.Close()
+
+	p.ServeTargetHTTP(rw, target_req)
+	p.ServeCloneHTTP(clone_req)
+
 	return
 }
 
@@ -496,7 +522,7 @@ func (p *ReverseClonedProxy) copyBuffer(dst io.Writer, src io.Reader, buf []byte
 	for {
 		nr, rerr := src.Read(buf)
 		if rerr != nil && rerr != io.EOF {
-			p.logf("httputil: ReverseClonedProxy read error during body copy: %v", rerr)
+			p.logf("httputil: CloneProxy read error during resp body copy: %v", rerr)
 		}
 		if nr > 0 {
 			nw, werr := dst.Write(buf[:nr])
@@ -586,15 +612,15 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 }
 
 // select a host from the passed `targets`
-func FlexibleReverseClonedProxy(target *url.URL, target_rewrite bool) *ReverseClonedProxy {
+func NewCloneProxy(target *url.URL, target_rewrite bool, clone *url.URL, clone_rewrite bool) *ReverseClonedProxy {
 	targetQuery := target.RawQuery
+	cloneQuery := clone.RawQuery
 	director := func(req *http.Request) {
 		println("CALLING DIRECTOR")
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
 		if target.Scheme == "https" || target_rewrite {
-			//req.Host = target.Hostname()
 			req.Host = target.Host
 		}
 		if targetQuery == "" || req.URL.RawQuery == "" {
@@ -604,13 +630,37 @@ func FlexibleReverseClonedProxy(target *url.URL, target_rewrite bool) *ReverseCl
 		}
 		dump, err := httputil.DumpRequest(req, false)
 		if err != nil {
-			fmt.Printf("Can DumpRequest")
+			fmt.Printf("Cant DumpRequest")
+		}
+		fmt.Printf("%s", dump)
+	}
+	directorclone := func(req *http.Request) {
+		println("CALLING DIRECTOR-CLONE")
+		req.URL.Scheme = clone.Scheme
+		req.URL.Host = clone.Host
+		req.URL.Path = singleJoiningSlash(clone.Path, req.URL.Path)
+		if clone.Scheme == "https" || clone_rewrite {
+			req.Host = clone.Host
+		}
+		if cloneQuery == "" || req.URL.RawQuery == "" {
+			req.URL.RawQuery = cloneQuery + req.URL.RawQuery
+		} else {
+			req.URL.RawQuery = cloneQuery + "&" + req.URL.RawQuery
+		}
+		dump, err := httputil.DumpRequest(req, false)
+		if err != nil {
+			fmt.Printf("Cant DumpRequest")
 		}
 		fmt.Printf("%s", dump)
 	}
 	return &ReverseClonedProxy{
-		Director: director,
+		Director:      director,
+		DirectorClone: directorclone,
 		Transport: &http.Transport{
+			TLSHandshakeTimeout: 10 * time.Second,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		},
+		TransportClone: &http.Transport{
 			TLSHandshakeTimeout: 10 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		},
@@ -621,7 +671,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("reverseclonedproxy version: %s\n", version_str)
+		fmt.Printf("cloneproxy version: %s\n", version_str)
 		os.Exit(0)
 	}
 
@@ -642,10 +692,11 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	targetURL := parseUrlWithDefaults(*target_url)
-	proxy := FlexibleReverseClonedProxy(targetURL, *target_rewrite)
+	cloneURL := parseUrlWithDefaults(*clone_url)
+	proxy := NewCloneProxy(targetURL, *target_rewrite, cloneURL, *clone_rewrite)
 
 	if len(*tlsPrivateKey) > 0 {
 		log.Fatal(http.ListenAndServeTLS(*listen_port, *tlsCertificate, *tlsPrivateKey, proxy))
