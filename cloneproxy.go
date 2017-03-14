@@ -598,9 +598,10 @@ func (m *maxLatencyWriter) stop() { m.done <- true }
 // **********************************************************************************
 
 func parseUrlWithDefaults(ustr string) *url.URL {
-	u, err := url.Parse(ustr)
+	u, err := url.ParseRequestURI(ustr)
 	if err != nil {
-		println("Parse Error")
+		fmt.Printf("Error: Unable to parse url %s  (Ex.  http://localhost:9001)", ustr)
+		os.Exit(1)
 	}
 	if u.Port() == "" && u.Scheme == "https" {
 		u.Host = fmt.Sprintf("%s:443", u.Host)
@@ -693,6 +694,15 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+
+	if !strings.HasPrefix(*target_url, "http") {
+		fmt.Printf("Error: target url %s is invalid\n\nURL's must have a scheme defined, either http or https\n", *target_url)
+		os.Exit(1)
+	}
+	if !strings.HasPrefix(*clone_url, "http") {
+		fmt.Printf("Error: clone url %s is invalid\n\nURL's must have a scheme defined, either http or https\n", *clone_url)
+		os.Exit(1)
+	}
 
 	targetURL := parseUrlWithDefaults(*target_url)
 	cloneURL := parseUrlWithDefaults(*clone_url)
