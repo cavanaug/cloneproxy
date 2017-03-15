@@ -14,9 +14,11 @@
 // -[Done] <<Testing/Checkpoint>>
 // -[Done] Add sequential calling of ServeCloneHTTP
 // -[Done] <<Testing/Checkpoint>>
-// - Add logging similar to what was done for our custom teeproxy
-// - <<Testing/Checkpoint>>
-// - Add async calling of ServeTargetHTTP & ServeCloneHTTP
+// -[Done] Add support for timeouts on a & b side
+// -[Done] Sync calling of ServeTargetHTTP & only on success call ServeCloneHTTP
+// -[Done] <<Testing/Checkpoint>>
+// - Cleanup Debugging & Add logging similar to what was done for our custom teeproxy
+// - Add in support for percentage of traffic to clone
 // - <<Testing/Checkpoint>>
 
 package main
@@ -28,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"github.com/satori/go.uuid"
 	"io"
 	"net"
 	"net/http"
@@ -42,14 +45,14 @@ import (
 
 // Console flags
 var (
-	version_str = "20170307.4 (cavanaug)"
+	version_str = "20170315.1 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
 	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
 
-	listen_port    = flag.String("l", ":8888", "port to accept requests")
-	tlsPrivateKey  = flag.String("key.pem", "", "path to the TLS private key file")
-	tlsCertificate = flag.String("cert.pem", "", "path to the TLS certificate file")
+	listen_port = flag.String("l", ":8888", "port to accept requests")
+	tls_key     = flag.String("key.pem", "", "path to the TLS private key file")
+	tls_cert    = flag.String("cert.pem", "", "path to the TLS certificate file")
 
 	target_url     = flag.String("a", "http://localhost:8080", "where target (A-Side) traffic goes")
 	target_timeout = flag.Int("a.timeout", 3, "timeout in seconds for target (A-Side) traffic")
@@ -193,7 +196,7 @@ var hopHeaders = []string{
 //
 // Serve the http for the Target
 // - This is unmodified from ReverseProxy.ServeHTTP
-func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request) {
+func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) int {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -271,7 +274,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
 		rw.WriteHeader(http.StatusBadGateway)
-		return
+		return http.StatusBadGateway
 	}
 
 	// Remove hop-by-hop headers listed in the
@@ -292,7 +295,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		if err := p.ModifyResponse(res); err != nil {
 			p.logf("http: proxy error: %v", err)
 			rw.WriteHeader(http.StatusBadGateway)
-			return
+			return http.StatusBadGateway
 		}
 	}
 
@@ -320,40 +323,24 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	p.copyResponse(rw, res.Body)
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
-	return
+	return res.StatusCode
 }
 
 //
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
-func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request) {
+func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) {
 
 	transport := p.TransportClone
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
 
-	//ctx := req.Context()
-	//if cn, ok := rw.(http.CloseNotifier); ok {
-	//	var cancel context.CancelFunc
-	//	ctx, cancel = context.WithCancel(ctx)
-	//	defer cancel()
-	//	notifyChan := cn.CloseNotify()
-	//	go func() {
-	//		select {
-	//		case <-notifyChan:
-	//			cancel()
-	//		case <-ctx.Done():
-	//		}
-	//	}()
-	//}
-
 	outreq := new(http.Request)
 	*outreq = *req // includes shallow copies of maps, but okay
 	if req.ContentLength == 0 {
 		outreq.Body = nil // Issue 16036: nil Body for http.Transport retries
 	}
-	// if false:   outreq = outreq.WithContext(ctx)
 
 	p.DirectorClone(outreq)
 	outreq.Close = false
@@ -462,12 +449,14 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-//
+// ***************************************************************************
 // Handle umbrella ServeHTTP interface
 // - Replicates the request
 // - Call each of ServeTargetHTTP & ServeCloneHTTP asynchronously
 // - Nothing else...
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+
+	uid := uuid.NewV4()
 
 	b1 := new(bytes.Buffer)
 	b2 := new(bytes.Buffer)
@@ -484,8 +473,21 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	defer req.Body.Close()
 
-	p.ServeTargetHTTP(rw, target_req)
-	p.ServeCloneHTTP(clone_req)
+	target_statuscode := p.ServeTargetHTTP(rw, target_req, uid)
+
+	//dump_req, err := httputil.DumpRequest(target_req, false)
+	//if err != nil {
+	//	fmt.Printf("Cant DumpRequest")
+	//}
+	//fmt.Printf("Target-Request(post, %s):  %s", uid, dump_req)
+
+	switch target_statuscode {
+	default: // ERROR
+		fmt.Printf("TARGET ERROR: %d\n", target_statuscode)
+	case 200, 201, 202: // SUCCESS
+		fmt.Printf("TARGET SUCCESS: %d\n", target_statuscode)
+		p.ServeCloneHTTP(clone_req, uid)
+	}
 
 	return
 }
@@ -613,7 +615,7 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 }
 
 // select a host from the passed `targets`
-func NewCloneProxy(target *url.URL, target_rewrite bool, clone *url.URL, clone_rewrite bool) *ReverseClonedProxy {
+func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clone *url.URL, clone_timeout int, clone_rewrite bool) *ReverseClonedProxy {
 	targetQuery := target.RawQuery
 	cloneQuery := clone.RawQuery
 	director := func(req *http.Request) {
@@ -658,11 +660,19 @@ func NewCloneProxy(target *url.URL, target_rewrite bool, clone *url.URL, clone_r
 		Director:      director,
 		DirectorClone: directorclone,
 		Transport: &http.Transport{
-			TLSHandshakeTimeout: 10 * time.Second,
+			Dial: (&net.Dialer{
+				Timeout:   time.Duration(time.Duration(target_timeout) * time.Second),
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout: 3 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		},
 		TransportClone: &http.Transport{
-			TLSHandshakeTimeout: 10 * time.Second,
+			Dial: (&net.Dialer{
+				Timeout:   time.Duration(time.Duration(clone_timeout) * time.Second),
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout: 3 * time.Second,
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		},
 	}
@@ -696,20 +706,35 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	if !strings.HasPrefix(*target_url, "http") {
-		fmt.Printf("Error: target url %s is invalid\n\nURL's must have a scheme defined, either http or https\n", *target_url)
+		fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", *target_url)
+		flag.Usage()
 		os.Exit(1)
 	}
 	if !strings.HasPrefix(*clone_url, "http") {
-		fmt.Printf("Error: clone url %s is invalid\n\nURL's must have a scheme defined, either http or https\n", *clone_url)
+		fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", *clone_url)
+		flag.Usage()
 		os.Exit(1)
 	}
 
 	targetURL := parseUrlWithDefaults(*target_url)
 	cloneURL := parseUrlWithDefaults(*clone_url)
-	proxy := NewCloneProxy(targetURL, *target_rewrite, cloneURL, *clone_rewrite)
+	proxy := NewCloneProxy(targetURL, *target_timeout, *target_rewrite, cloneURL, *clone_timeout, *clone_rewrite)
 
-	if len(*tlsPrivateKey) > 0 {
-		log.Fatal(http.ListenAndServeTLS(*listen_port, *tlsCertificate, *tlsPrivateKey, proxy))
+	log.WithFields(log.Fields{
+		"version":    version_str,
+		"proxy_port": *listen_port,
+		"b_percent":  *clone_percent,
+		"proxy_tls":  len(*tls_key) > 0,
+		"a_url":      *target_url,
+		"a_timeout":  *target_timeout,
+		"a_rewrite":  *target_rewrite,
+		"b_url":      *clone_url,
+		"b_timeout":  *clone_timeout,
+		"b_rewrite":  *clone_rewrite,
+	}).Info("Cloneproxy Initializing")
+
+	if len(*tls_key) > 0 {
+		log.Fatal(http.ListenAndServeTLS(*listen_port, *tls_cert, *tls_key, proxy))
 	} else {
 		log.Fatal(http.ListenAndServe(*listen_port, proxy))
 	}
