@@ -654,11 +654,10 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 		} else {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
-		//dump, err := httputil.DumpRequest(req, false)
-		//if err != nil {
-		//	fmt.Printf("Cant DumpRequest")
-		//}
-		//fmt.Printf("%s", dump)
+		if _, ok := req.Header["User-Agent"]; !ok {
+			// explicitly disable User-Agent so it's not set to default value
+			req.Header.Set("User-Agent", "")
+		}
 	}
 	directorclone := func(req *http.Request) {
 		//log.Debug("CALLING DIRECTOR CLONE")
@@ -673,11 +672,10 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 		} else {
 			req.URL.RawQuery = cloneQuery + "&" + req.URL.RawQuery
 		}
-		//dump, err := httputil.DumpRequest(req, false)
-		//if err != nil {
-		//	fmt.Printf("Cant DumpRequest")
-		//}
-		//fmt.Printf("%s", dump)
+		if _, ok := req.Header["User-Agent"]; !ok {
+			// explicitly disable User-Agent so it's not set to default value
+			req.Header.Set("User-Agent", "")
+		}
 	}
 	return &ReverseClonedProxy{
 		Director:      director,

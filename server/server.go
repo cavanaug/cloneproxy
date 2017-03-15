@@ -29,8 +29,7 @@ func main() {
 		body, _ := ioutil.ReadAll(req.Body)
 		s := sha1.Sum(body)
 
-		//fmt.Printf("---Body---\n%s----------", body)
-		fmt.Printf("---> %s %s %s  sha1:%x\n", os.Args[1], req.Method, req.URL.String(), s)
+		fmt.Printf("---> %s %s %s %s sha1:%x\n", os.Args[1], req.Method, req.URL.String(), req.UserAgent(), s)
 		fmt.Fprintf(w, "Body(sha1): %x\n", s)
 	})
 	http.ListenAndServe(":"+os.Args[1], nil)
