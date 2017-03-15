@@ -17,7 +17,8 @@
 // -[Done] Add support for timeouts on a & b side
 // -[Done] Sync calling of ServeTargetHTTP & only on success call ServeCloneHTTP
 // -[Done] <<Testing/Checkpoint>>
-// - Cleanup Debugging & Add logging similar to what was done for our custom teeproxy
+// -[Done] Cleanup Debugging & Add logging similar to what was done for our custom teeproxy
+// -[Done] <<Testing/Checkpoint>>
 // - Add in support for percentage of traffic to clone
 // - <<Testing/Checkpoint>>
 
