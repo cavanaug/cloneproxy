@@ -46,7 +46,7 @@ import (
 
 // Console flags
 var (
-	version_str = "20170315.2 (cavanaug)"
+	version_str = "20170315.3 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
 	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
@@ -166,7 +166,7 @@ var hopHeaders = []string{
 
 //
 // Serve the http for the Target
-// - This is unmodified from ReverseProxy.ServeHTTP
+// - This is unmodified from ReverseProxy.ServeHTTP except for logging
 func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) int {
 	transport := p.Transport
 	if transport == nil {
@@ -249,6 +249,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		"request_proto":         outreq.Proto,
 		"request_host":          outreq.Host,
 		"request_contentlength": outreq.ContentLength,
+		//"request_context":       outreq.Context(),
 	}).Info("Proxy Request")
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
@@ -335,6 +336,12 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) in
 		outreq.Body = nil // Issue 16036: nil Body for http.Transport retries
 	}
 
+	// Hmm.   Im not an expert on how contexts & cancels are handled.
+	// Im making potentially a dangerous assumption that giving the clone
+	// side a new context, this wont get cancelled on a client.Done.  In essence
+	// no cancellation on clone if the target & client are complete.
+	outreq = outreq.WithContext(context.TODO())
+
 	p.DirectorClone(outreq)
 	outreq.Close = false
 
@@ -389,7 +396,9 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) in
 		"request_proto":         outreq.Proto,
 		"request_host":          outreq.Host,
 		"request_contentlength": outreq.ContentLength,
+		//"request_context":       outreq.Context(),
 	}).Info("Proxy Request")
+
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		log.WithFields(log.Fields{
