@@ -46,7 +46,7 @@ import (
 
 // Console flags
 var (
-	version_str = "20170315.1 (cavanaug)"
+	version_str = "20170315.2 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
 	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
