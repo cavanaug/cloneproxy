@@ -1,4 +1,3 @@
-//
 // ReverseCloneProxy
 // - A reverse proxy with a forking of traffic to a clone
 //
@@ -36,6 +35,7 @@ import (
 	"net"
 	"net/http"
 	//	"net/http/httputil"
+	"math/rand"
 	"net/url"
 	"os"
 	"runtime"
@@ -62,7 +62,7 @@ var (
 	clone_url     = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
 	clone_timeout = flag.Int("b.timeout", 3, "timeout in seconds for clone (B-Side) traffic")
 	clone_rewrite = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
-	clone_percent = flag.Float64("p", 100.0, "float64 percentage of traffic to send to clone (B Side)")
+	clone_percent = flag.Float64("b.percent", 100.0, "float64 percentage of traffic to send to clone (B Side)")
 )
 
 // **********************************************************************************
@@ -140,36 +140,6 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
-}
-
-// NewReverseClonedProxy returns a new ReverseClonedProxy that routes
-// URLs to the scheme, host, and base path provided in target. If the
-// target's path is "/base" and the incoming request was for "/dir",
-// the target request will be for /base/dir.
-// NewReverseClonedProxy does not rewrite the Host header.
-// To rewrite Host headers, use ReverseClonedProxy directly with a custom
-// Director policy.
-//
-// TODO: Setup a struct for the target & clone with all of their params
-//       things like rewrite, timeout, etc.
-//
-func NewReverseClonedProxy(target *url.URL) *ReverseClonedProxy {
-	targetQuery := target.RawQuery
-	director := func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-		}
-		//		if _, ok := req.Header["User-Agent"]; !ok {
-		//			// explicitly disable User-Agent so it's not set to default value
-		//			req.Header.Set("User-Agent", "")
-		//		}
-	}
-	return &ReverseClonedProxy{Director: director}
 }
 
 func copyHeader(dst, src http.Header) {
@@ -489,19 +459,25 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	*target_req = *req
 	target_req.Body = nopCloser{b1}
 
+	clone_statuscode := 0
+	clone_random := rand.New(rand.NewSource(time.Now().UnixNano())).Float64() * 100
 	clone_req := new(http.Request)
 	*clone_req = *req
 	clone_req.Body = nopCloser{b2}
 
 	defer req.Body.Close()
 
+	// Process Target
 	target_statuscode := p.ServeTargetHTTP(rw, target_req, uid)
 
-	var clone_statuscode int = 0
+	// Process Clone
+	//    iff Target returned without server error
+	//        && random number is less than percent
 	switch {
-	//case 200, 201, 202: // SUCCESS
 	case target_statuscode < 500: // NON-SERVER ERROR
-		clone_statuscode = p.ServeCloneHTTP(clone_req, uid)
+		if *clone_percent == 100.0 || clone_random < *clone_percent {
+			clone_statuscode = p.ServeCloneHTTP(clone_req, uid)
+		}
 	case target_statuscode >= 500: // SERVER ERROR
 		log.WithFields(log.Fields{
 			"uuid": uid,
@@ -613,14 +589,6 @@ func (m *maxLatencyWriter) flushLoop() {
 }
 
 func (m *maxLatencyWriter) stop() { m.done <- true }
-
-// **********************************************************************************
-// End: Package components
-// **********************************************************************************
-
-// **********************************************************************************
-// Begin: main
-// **********************************************************************************
 
 func parseUrlWithDefaults(ustr string) *url.URL {
 	u, err := url.ParseRequestURI(ustr)
@@ -744,7 +712,6 @@ func main() {
 	log.WithFields(log.Fields{
 		"version":    version_str,
 		"proxy_port": *listen_port,
-		"b_percent":  *clone_percent,
 		"proxy_tls":  len(*tls_key) > 0,
 		"a_url":      *target_url,
 		"a_timeout":  *target_timeout,
@@ -752,6 +719,7 @@ func main() {
 		"b_url":      *clone_url,
 		"b_timeout":  *clone_timeout,
 		"b_rewrite":  *clone_rewrite,
+		"b_percent":  *clone_percent,
 	}).Info("Cloneproxy Initializing")
 
 	if len(*tls_key) > 0 {
