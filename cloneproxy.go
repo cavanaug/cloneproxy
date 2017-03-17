@@ -18,8 +18,9 @@
 // -[Done] <<Testing/Checkpoint>>
 // -[Done] Cleanup Debugging & Add logging similar to what was done for our custom teeproxy
 // -[Done] <<Testing/Checkpoint>>
-// - Add in support for percentage of traffic to clone
-// - <<Testing/Checkpoint>>
+// -[Done] Add in support for percentage of traffic to clone
+// -[Done] <<Testing/Checkpoint>>
+// -[Done] Add separate context for clone to prevent context cancel exits.
 
 package main
 
@@ -46,7 +47,7 @@ import (
 
 // Console flags
 var (
-	version_str = "20170315.3 (cavanaug)"
+	version_str = "20170317.1 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
 	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
@@ -663,7 +664,9 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 				KeepAlive: 30 * time.Second,
 			}).Dial,
 			TLSHandshakeTimeout: 3 * time.Second,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig:     &tls.Config{
+			//InsecureSkipVerify: true
+			},
 		},
 		TransportClone: &http.Transport{
 			Dial: (&net.Dialer{
@@ -671,7 +674,9 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 				KeepAlive: 30 * time.Second,
 			}).Dial,
 			TLSHandshakeTimeout: 3 * time.Second,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig:     &tls.Config{
+			//InsecureSkipVerify: true
+			},
 		},
 	}
 }
