@@ -21,6 +21,11 @@
 // -[Done] Add in support for percentage of traffic to clone
 // -[Done] <<Testing/Checkpoint>>
 // -[Done] Add separate context for clone to prevent context cancel exits.
+// -[Done] Add support for Proxy so I can test this thing from my cube
+// -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
+// - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
+// - (Defer to 2.0) Add support for performance metrics on target/clone responses (see davecheney/httpstat)
+// - (Defer to 2.0) Add support for service endpoint healthcheck & stats
 
 package main
 
@@ -33,10 +38,10 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/satori/go.uuid"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
-	//	"net/http/httputil"
-	"math/rand"
+	//"net/http/httputil"
 	"net/url"
 	"os"
 	"runtime"
@@ -47,7 +52,7 @@ import (
 
 // Console flags
 var (
-	version_str = "20170317.1 (cavanaug)"
+	version_str = "20170329.1 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
 	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
@@ -168,7 +173,7 @@ var hopHeaders = []string{
 //
 // Serve the http for the Target
 // - This is unmodified from ReverseProxy.ServeHTTP except for logging
-func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) int {
+func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) (int, int64) {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -261,7 +266,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"error":         err,
 		}).Error("Proxy Response")
 		rw.WriteHeader(http.StatusBadGateway)
-		return http.StatusBadGateway
+		return int(http.StatusBadGateway), int64(0)
 	}
 	if *debug > 4 {
 		log.WithFields(log.Fields{
@@ -318,13 +323,13 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	p.copyResponse(rw, res.Body)
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
-	return res.StatusCode
+	return res.StatusCode, res.ContentLength
 }
 
 //
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
-func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) int {
+func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (int, int64) {
 
 	transport := p.TransportClone
 	if transport == nil {
@@ -408,7 +413,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) in
 			"response_code": http.StatusBadGateway,
 			"error":         err,
 		}).Error("Proxy Response")
-		return http.StatusBadGateway
+		return http.StatusBadGateway, int64(0)
 	}
 	if *debug > 4 {
 		log.WithFields(log.Fields{
@@ -442,7 +447,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) in
 	}
 
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
-	return res.StatusCode
+	return res.StatusCode, res.ContentLength
 }
 
 type nopCloser struct {
@@ -470,6 +475,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	target_req.Body = nopCloser{b1}
 
 	clone_statuscode := 0
+	clone_contentlength := int64(0)
 	clone_random := rand.New(rand.NewSource(time.Now().UnixNano())).Float64() * 100
 	clone_req := new(http.Request)
 	*clone_req = *req
@@ -478,7 +484,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	defer req.Body.Close()
 
 	// Process Target
-	target_statuscode := p.ServeTargetHTTP(rw, target_req, uid)
+	target_statuscode, target_contentlength := p.ServeTargetHTTP(rw, target_req, uid)
 
 	// Process Clone
 	//    iff Target returned without server error
@@ -486,7 +492,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	switch {
 	case target_statuscode < 500: // NON-SERVER ERROR
 		if *clone_percent == 100.0 || clone_random < *clone_percent {
-			clone_statuscode = p.ServeCloneHTTP(clone_req, uid)
+			clone_statuscode, clone_contentlength = p.ServeCloneHTTP(clone_req, uid)
 		}
 	case target_statuscode >= 500: // SERVER ERROR
 		log.WithFields(log.Fields{
@@ -497,12 +503,27 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	// Clone SERVER ERROR after procesed Target
+	// - This means LOST data at clone
 	if clone_statuscode >= 500 {
 		log.WithFields(log.Fields{
 			"uuid":          uid,
 			"side":          "B-Side",
 			"response_code": clone_statuscode,
 		}).Error("Proxy Response Unfulfilled")
+		return
+	}
+
+	// Clone/Target Mismatch
+	// - This means disagreement between Clone & Target
+	// - This could be completely ok dependent on how responses are handled
+	if clone_statuscode != target_statuscode || clone_contentlength != target_contentlength {
+		log.WithFields(log.Fields{
+			"uuid":                     uid,
+			"a_response_code":          clone_statuscode,
+			"b_response_code":          target_statuscode,
+			"a_response_contentlength": clone_contentlength,
+			"b_response_contentlength": target_contentlength,
+		}).Warn("Proxy Response Mismatch")
 		return
 	}
 
@@ -659,6 +680,7 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 		Director:      director,
 		DirectorClone: directorclone,
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   time.Duration(time.Duration(target_timeout) * time.Second),
 				KeepAlive: 30 * time.Second,
@@ -669,6 +691,7 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 			},
 		},
 		TransportClone: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   time.Duration(time.Duration(clone_timeout) * time.Second),
 				KeepAlive: 30 * time.Second,
@@ -741,4 +764,17 @@ func main() {
 	} else {
 		log.Fatal(http.ListenAndServe(*listen_port, proxy))
 	}
+
+	log.WithFields(log.Fields{
+		"version":    version_str,
+		"proxy_port": *listen_port,
+		"proxy_tls":  len(*tls_key) > 0,
+		"a_url":      *target_url,
+		"a_timeout":  *target_timeout,
+		"a_rewrite":  *target_rewrite,
+		"b_url":      *clone_url,
+		"b_timeout":  *clone_timeout,
+		"b_rewrite":  *clone_rewrite,
+		"b_percent":  *clone_percent,
+	}).Info("Cloneproxy Exiting")
 }
