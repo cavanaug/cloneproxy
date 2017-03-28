@@ -25,7 +25,7 @@
 // -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for performance metrics on target/clone responses (see davecheney/httpstat)
-// - (Defer to 2.0) Add support for service endpoint healthcheck & stats
+// - (Defer to 2.0) Add support for service endpoint (/cloneproxy/status) healthcheck & stats
 
 package main
 
@@ -54,7 +54,7 @@ import (
 var (
 	version_str = "20170329.1 (cavanaug)"
 	version     = flag.Bool("v", false, "show version number")
-	debug       = flag.Int("debug", 0, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
+	debug       = flag.Int("debug", 1, "debug log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
 
 	listen_port = flag.String("l", ":8888", "port to accept requests")
@@ -705,6 +705,23 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 }
 
 func main() {
+	//
+	// Handle Option Processing
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, `
+%s:
+  HTTP_PROXY    proxy for HTTP requests; complete URL or HOST[:PORT]
+                used for HTTPS requests if HTTPS_PROXY undefined
+  HTTPS_PROXY   proxy for HTTPS requests; complete URL or HOST[:PORT]
+  NO_PROXY      comma-separated list of hosts to exclude from proxy
+`, "ENVIRONMENT")
+		fmt.Fprintf(os.Stderr, `
+%s:
+  WebSite       https://github.com/cavanaug/cloneproxy
+`, "MISC")
+	}
 	flag.Parse()
 
 	if *version {
@@ -729,8 +746,6 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
-
 	if !strings.HasPrefix(*target_url, "http") {
 		fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", *target_url)
 		flag.Usage()
@@ -741,6 +756,10 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	//
+	// Begin actual main function
+	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	targetURL := parseUrlWithDefaults(*target_url)
 	cloneURL := parseUrlWithDefaults(*clone_url)
