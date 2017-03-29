@@ -23,6 +23,8 @@
 // -[Done] Add separate context for clone to prevent context cancel exits.
 // -[Done] Add support for Proxy so I can test this thing from my cube
 // -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
+// -[Done-0328] Fixed a bug with XFF handling on B side
+// -[Done-0328] Add very basic timing information for each side & total
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for performance metrics on target/clone responses (see davecheney/httpstat)
 // - (Defer to 2.0) Add support for service endpoint (/cloneproxy/status) healthcheck & stats
@@ -175,6 +177,7 @@ var hopHeaders = []string{
 // Serve the http for the Target
 // - This is unmodified from ReverseProxy.ServeHTTP except for logging
 func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) (int, int64) {
+	t := time.Now()
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -257,7 +260,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		"request_host":   outreq.Host,
 		//		"request_header":        outreq.Header,
 		"request_contentlength": outreq.ContentLength,
-	}).Info("Proxy Request")
+	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
@@ -307,11 +310,13 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}
 	}
 	res_length := p.copyResponse(rw, res.Body)
+	res_time := time.Since(t).Nanoseconds() / 1000000
 	if *debug > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "A-Side",
 			"response_code":   res.StatusCode,
+			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
 		}).Debug("Proxy Response (Debug)")
@@ -319,9 +324,10 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "A-Side",
+			"response_time":   res_time,
 			"response_code":   res.StatusCode,
 			"response_length": res_length,
-		}).Info("Proxy Response")
+		}).Debug("Proxy Response")
 	}
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
@@ -332,7 +338,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
 func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (int, int64) {
-
+	t := time.Now()
 	transport := p.TransportClone
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -405,7 +411,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		"request_host":   outreq.Host,
 		//		"request_header":        outreq.Header,
 		"request_contentlength": outreq.ContentLength,
-	}).Info("Proxy Request")
+	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
@@ -419,22 +425,25 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	}
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
+	res_time := time.Since(t).Nanoseconds() / 1000000
 	if *debug > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "B-Side",
 			"response_code":   res.StatusCode,
-			"response_body":   body, //fmt.Sprintf("%s", body),
+			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
-		}).Debug("Proxy Response (Debug)")
+			"response_body":   body, //fmt.Sprintf("%s", body),
+		}).Debug("Proxy Response (Details)")
 	} else {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "B-Side",
 			"response_code":   res.StatusCode,
+			"response_time":   res_time,
 			"response_length": res_length,
-		}).Info("Proxy Response")
+		}).Debug("Proxy Response")
 	}
 
 	// Remove hop-by-hop headers listed in the
@@ -469,6 +478,7 @@ func (nopCloser) Close() error { return nil }
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	uid := uuid.NewV4()
+	t := time.Now()
 
 	b1 := new(bytes.Buffer)
 	b2 := new(bytes.Buffer)
@@ -515,9 +525,10 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		}
 	case target_statuscode >= 500: // SERVER ERROR
 		log.WithFields(log.Fields{
-			"uuid": uid,
-			"side": "B-Side",
-		}).Info("Proxy Request Skipped")
+			"uuid":            uid,
+			"a_response_code": target_statuscode,
+			"b_response_code": 0,
+		}).Info("Proxy Clone Request Skipped")
 		return
 	}
 
@@ -525,12 +536,15 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// - This means LOST data at clone
 	if clone_statuscode >= 500 {
 		log.WithFields(log.Fields{
-			"uuid":          uid,
-			"side":          "B-Side",
-			"response_code": clone_statuscode,
-		}).Error("Proxy Response Unfulfilled")
+			"uuid":            uid,
+			"a_response_code": target_statuscode,
+			"b_response_code": clone_statuscode,
+		}).Error("Proxy Clone Request Unfulfilled")
 		return
 	}
+
+	// Ultra simple timing information for total of both a & b
+	duration := time.Since(t).Nanoseconds() / 1000000
 
 	// Clone/Target Mismatch
 	// - This means disagreement between Clone & Target
@@ -538,12 +552,23 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	if (clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength) {
 		log.WithFields(log.Fields{
 			"uuid":              uid,
+			"request_method":    req.Method,
+			"request_path":      req.URL.RequestURI(),
 			"a_response_code":   target_statuscode,
 			"b_response_code":   clone_statuscode,
 			"a_response_length": target_contentlength,
 			"b_response_length": clone_contentlength,
-		}).Warn("Proxy Response Mismatch")
-		return
+		}).Warn("CloneProxy Responses Mismatch")
+	} else {
+		log.WithFields(log.Fields{
+			"uuid":                  uid,
+			"request_method":        req.Method,
+			"request_path":          req.URL.RequestURI(),
+			"request_contentlength": req.ContentLength,
+			"response_code":         target_statuscode,
+			"response_length":       target_contentlength,
+			"response_time":         duration,
+		}).Info("CloneProxy Responses Match")
 	}
 
 	return
@@ -661,7 +686,6 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 	targetQuery := target.RawQuery
 	cloneQuery := clone.RawQuery
 	director := func(req *http.Request) {
-		//log.Debug("CALLING DIRECTOR")
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
@@ -679,7 +703,6 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, clo
 		}
 	}
 	directorclone := func(req *http.Request) {
-		//log.Debug("CALLING DIRECTOR CLONE")
 		req.URL.Scheme = clone.Scheme
 		req.URL.Host = clone.Host
 		req.URL.Path = singleJoiningSlash(clone.Path, req.URL.Path)
