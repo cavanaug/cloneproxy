@@ -38,6 +38,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/satori/go.uuid"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -248,15 +249,16 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	log.WithFields(log.Fields{
-		"uuid":                  uid,
-		"side":                  "A-Side",
-		"request_method":        outreq.Method,
-		"request_path":          outreq.URL.RequestURI(),
-		"request_proto":         outreq.Proto,
-		"request_host":          outreq.Host,
+		"uuid":           uid,
+		"side":           "A-Side",
+		"request_method": outreq.Method,
+		"request_path":   outreq.URL.RequestURI(),
+		"request_proto":  outreq.Proto,
+		"request_host":   outreq.Host,
+		//		"request_header":        outreq.Header,
 		"request_contentlength": outreq.ContentLength,
-		//"request_context":       outreq.Context(),
 	}).Info("Proxy Request")
+
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -267,22 +269,6 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}).Error("Proxy Response")
 		rw.WriteHeader(http.StatusBadGateway)
 		return int(http.StatusBadGateway), int64(0)
-	}
-	if *debug > 4 {
-		log.WithFields(log.Fields{
-			"uuid":                   uid,
-			"side":                   "A-Side",
-			"response_code":          res.StatusCode,
-			"response_contentlength": res.ContentLength,
-			"response_header":        res.Header,
-		}).Debug("Proxy Response (Debug)")
-	} else {
-		log.WithFields(log.Fields{
-			"uuid":                   uid,
-			"side":                   "A-Side",
-			"response_code":          res.StatusCode,
-			"response_contentlength": res.ContentLength,
-		}).Info("Proxy Response")
 	}
 
 	// Remove hop-by-hop headers listed in the
@@ -320,10 +306,26 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			fl.Flush()
 		}
 	}
-	p.copyResponse(rw, res.Body)
+	res_length := p.copyResponse(rw, res.Body)
+	if *debug > 4 {
+		log.WithFields(log.Fields{
+			"uuid":            uid,
+			"side":            "A-Side",
+			"response_code":   res.StatusCode,
+			"response_length": res_length,
+			"response_header": res.Header,
+		}).Debug("Proxy Response (Debug)")
+	} else {
+		log.WithFields(log.Fields{
+			"uuid":            uid,
+			"side":            "A-Side",
+			"response_code":   res.StatusCode,
+			"response_length": res_length,
+		}).Info("Proxy Response")
+	}
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
-	return res.StatusCode, res.ContentLength
+	return res.StatusCode, res_length
 }
 
 //
@@ -395,14 +397,14 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	}
 
 	log.WithFields(log.Fields{
-		"uuid":                  uid,
-		"side":                  "B-Side",
-		"request_method":        outreq.Method,
-		"request_path":          outreq.URL.RequestURI(),
-		"request_proto":         outreq.Proto,
-		"request_host":          outreq.Host,
+		"uuid":           uid,
+		"side":           "B-Side",
+		"request_method": outreq.Method,
+		"request_path":   outreq.URL.RequestURI(),
+		"request_proto":  outreq.Proto,
+		"request_host":   outreq.Host,
+		//		"request_header":        outreq.Header,
 		"request_contentlength": outreq.ContentLength,
-		//"request_context":       outreq.Context(),
 	}).Info("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
@@ -415,20 +417,23 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		}).Error("Proxy Response")
 		return http.StatusBadGateway, int64(0)
 	}
+	body, _ := ioutil.ReadAll(res.Body)
+	res_length := int64(len(fmt.Sprintf("%s", body)))
 	if *debug > 4 {
 		log.WithFields(log.Fields{
-			"uuid":                   uid,
-			"side":                   "B-Side",
-			"response_code":          res.StatusCode,
-			"response_contentlength": res.ContentLength,
-			"response_header":        res.Header,
+			"uuid":            uid,
+			"side":            "B-Side",
+			"response_code":   res.StatusCode,
+			"response_body":   body, //fmt.Sprintf("%s", body),
+			"response_length": res_length,
+			"response_header": res.Header,
 		}).Debug("Proxy Response (Debug)")
 	} else {
 		log.WithFields(log.Fields{
-			"uuid":                   uid,
-			"side":                   "B-Side",
-			"response_code":          res.StatusCode,
-			"response_contentlength": res.ContentLength,
+			"uuid":            uid,
+			"side":            "B-Side",
+			"response_code":   res.StatusCode,
+			"response_length": res_length,
 		}).Info("Proxy Response")
 	}
 
@@ -447,7 +452,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	}
 
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
-	return res.StatusCode, res.ContentLength
+	return res.StatusCode, res_length
 }
 
 type nopCloser struct {
@@ -470,16 +475,30 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	w := io.MultiWriter(b1, b2)
 	io.Copy(w, req.Body)
 
+	// Target is a pointer copy of original req with new iostream for Body
 	target_req := new(http.Request)
 	*target_req = *req
 	target_req.Body = nopCloser{b1}
 
+	// Clone is a dep copy of original req
 	clone_statuscode := 0
 	clone_contentlength := int64(0)
 	clone_random := rand.New(rand.NewSource(time.Now().UnixNano())).Float64() * 100
-	clone_req := new(http.Request)
-	*clone_req = *req
-	clone_req.Body = nopCloser{b2}
+	//clone_req := new(http.Request)
+	//*clone_req = *req
+	//clone_req.Body = nopCloser{b2}
+	clone_req := &http.Request{
+		Method:        req.Method,
+		URL:           req.URL,
+		Proto:         req.Proto,
+		ProtoMajor:    req.ProtoMajor,
+		ProtoMinor:    req.ProtoMinor,
+		Header:        req.Header,
+		Body:          nopCloser{b2},
+		Host:          req.Host,
+		ContentLength: req.ContentLength,
+		Close:         req.Close,
+	}
 
 	defer req.Body.Close()
 
@@ -516,13 +535,13 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// Clone/Target Mismatch
 	// - This means disagreement between Clone & Target
 	// - This could be completely ok dependent on how responses are handled
-	if clone_statuscode != target_statuscode || clone_contentlength != target_contentlength {
+	if (clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength) {
 		log.WithFields(log.Fields{
-			"uuid":                     uid,
-			"a_response_code":          clone_statuscode,
-			"b_response_code":          target_statuscode,
-			"a_response_contentlength": clone_contentlength,
-			"b_response_contentlength": target_contentlength,
+			"uuid":              uid,
+			"a_response_code":   target_statuscode,
+			"b_response_code":   clone_statuscode,
+			"a_response_length": target_contentlength,
+			"b_response_length": clone_contentlength,
 		}).Warn("Proxy Response Mismatch")
 		return
 	}
@@ -530,7 +549,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	return
 }
 
-func (p *ReverseClonedProxy) copyResponse(dst io.Writer, src io.Reader) {
+func (p *ReverseClonedProxy) copyResponse(dst io.Writer, src io.Reader) int64 {
 	if p.FlushInterval != 0 {
 		if wf, ok := dst.(writeFlusher); ok {
 			mlw := &maxLatencyWriter{
@@ -548,10 +567,11 @@ func (p *ReverseClonedProxy) copyResponse(dst io.Writer, src io.Reader) {
 	if p.BufferPool != nil {
 		buf = p.BufferPool.Get()
 	}
-	p.copyBuffer(dst, src, buf)
+	written, _ := p.copyBuffer(dst, src, buf)
 	if p.BufferPool != nil {
 		p.BufferPool.Put(buf)
 	}
+	return written
 }
 
 func (p *ReverseClonedProxy) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, error) {
@@ -627,12 +647,12 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 		fmt.Printf("Error: Unable to parse url %s  (Ex.  http://localhost:9001)", ustr)
 		os.Exit(1)
 	}
-	if u.Port() == "" && u.Scheme == "https" {
-		u.Host = fmt.Sprintf("%s:443", u.Host)
-	}
-	if u.Port() == "" && u.Scheme == "http" {
-		u.Host = fmt.Sprintf("%s:80", u.Host)
-	}
+	//if u.Port() == "" && u.Scheme == "https" {
+	//	u.Host = fmt.Sprintf("%s:443", u.Host)
+	//}
+	//if u.Port() == "" && u.Scheme == "http" {
+	//	u.Host = fmt.Sprintf("%s:80", u.Host)
+	//}
 	return u
 }
 
@@ -708,7 +728,8 @@ func main() {
 	//
 	// Handle Option Processing
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
+		fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 %s:
