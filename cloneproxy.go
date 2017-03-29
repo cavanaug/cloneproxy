@@ -21,12 +21,13 @@
 // -[Done] Add in support for percentage of traffic to clone
 // -[Done] <<Testing/Checkpoint>>
 // -[Done] Add separate context for clone to prevent context cancel exits.
-// -[Done] Add support for Proxy so I can test this thing from my cube
+// -[Done-0328] Cleanup context logging & logging in general
+// -[Done-0328] Add support for Proxy so I can test this thing from my cube
 // -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
 // -[Done-0328] Fixed a bug with XFF handling on B side
 // -[Done-0328] Add very basic timing information for each side & total
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
-// - (Defer to 2.0) Add support for performance metrics on target/clone responses (see davecheney/httpstat)
+// - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
 // - (Defer to 2.0) Add support for service endpoint (/cloneproxy/status) healthcheck & stats
 
 package main
