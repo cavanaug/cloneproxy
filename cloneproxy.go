@@ -486,9 +486,17 @@ func (nopCloser) Close() error { return nil }
 // - Nothing else...
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
+	// Normal mechanism for expvar doesnt work with ReverseProxy
+	if req.URL.Path == "/debug/vars" {
+		expvar.Handler().ServeHTTP(rw, req)
+		return
+	}
+
+	// Initialize tracking vars
 	uid := uuid.NewV4()
 	t := time.Now()
 
+	// Copy Body
 	b1 := new(bytes.Buffer)
 	b2 := new(bytes.Buffer)
 	w := io.MultiWriter(b1, b2)
