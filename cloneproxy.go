@@ -276,7 +276,6 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
-	defer res.Body.Close() // ensure we dont bleed connections
 	if err != nil {
 		log.WithFields(log.Fields{
 			"uuid":          uid,
@@ -533,8 +532,8 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	defer req.Body.Close()
-	defer target_req.Body.Close()
-	defer clone_req.Body.Close()
+	//defer target_req.Body.Close()
+	//defer clone_req.Body.Close()
 
 	// Process Target
 	target_statuscode, target_contentlength := p.ServeTargetHTTP(rw, target_req, uid)
