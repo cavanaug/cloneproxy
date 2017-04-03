@@ -59,7 +59,7 @@ import (
 )
 
 var (
-	version_str = "20170331.1 (cavanaug)"
+	version_str = "20170403.1 (cavanaug)"
 
 	// Console flags
 	version     = flag.Bool("v", false, "show version number")
@@ -276,6 +276,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
+	defer res.Body.Close() // ensure we dont bleed connections
 	if err != nil {
 		log.WithFields(log.Fields{
 			"uuid":          uid,
@@ -416,17 +417,17 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	}
 
 	log.WithFields(log.Fields{
-		"uuid":           uid,
-		"side":           "B-Side",
-		"request_method": outreq.Method,
-		"request_path":   outreq.URL.RequestURI(),
-		"request_proto":  outreq.Proto,
-		"request_host":   outreq.Host,
-		//		"request_header":        outreq.Header,
+		"uuid":                  uid,
+		"side":                  "B-Side",
+		"request_method":        outreq.Method,
+		"request_path":          outreq.URL.RequestURI(),
+		"request_proto":         outreq.Proto,
+		"request_host":          outreq.Host,
 		"request_contentlength": outreq.ContentLength,
 	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
+	defer res.Body.Close() // ensure we dont bleed connections
 	if err != nil {
 		log.WithFields(log.Fields{
 			"uuid":          uid,
@@ -473,7 +474,6 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		res.Header.Del(h)
 	}
 
-	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	return res.StatusCode, res_length
 }
 
@@ -533,6 +533,8 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	defer req.Body.Close()
+	defer target_req.Body.Close()
+	defer clone_req.Body.Close()
 
 	// Process Target
 	target_statuscode, target_contentlength := p.ServeTargetHTTP(rw, target_req, uid)
