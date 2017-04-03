@@ -26,9 +26,11 @@
 // -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
 // -[Done-0328] Fixed a bug with XFF handling on B side
 // -[Done-0328] Add very basic timing information for each side & total
+// -[Done-0331] Add support for debug/service endpoint on /debug/vars
+// -[Done-0331] Add support regular status log messages (every 15min)
+// -[Done-0331] Add tracking for matches/mismatches/unfulfilled/skipped
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
-// - (Defer to 2.0) Add support for service endpoint (/cloneproxy/status) healthcheck & stats
 
 package main
 
@@ -56,12 +58,13 @@ import (
 	"time"
 )
 
-// Console flags
 var (
 	version_str = "20170331.1 (cavanaug)"
+
+	// Console flags
 	version     = flag.Bool("v", false, "show version number")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
-	loglevel    = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=loglevel, 5=Verboseloglevel")
+	loglevel    = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 
 	listen_port = flag.String("l", ":8888", "port to accept requests")
 	tls_key     = flag.String("key.pem", "", "path to the TLS private key file")
@@ -72,11 +75,12 @@ var (
 	target_rewrite  = flag.Bool("a.rewrite", false, "rewrite the host header when proxying target (A-Side) traffic")
 	target_insecure = flag.Bool("a.insecure", false, "insecure SSL validation for target (A-Side) traffic")
 
-	clone_url         = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
-	clone_timeout     = flag.Int("b.timeout", 3, "timeout in seconds for clone (B-Side) traffic")
-	clone_rewrite     = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
-	clone_insecure    = flag.Bool("b.insecure", false, "insecure SSL validation for clone (B-Side) traffic")
-	clone_percent     = flag.Float64("b.percent", 100.0, "float64 percentage of traffic to send to clone (B Side)")
+	clone_url      = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
+	clone_timeout  = flag.Int("b.timeout", 3, "timeout in seconds for clone (B-Side) traffic")
+	clone_rewrite  = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
+	clone_insecure = flag.Bool("b.insecure", false, "insecure SSL validation for clone (B-Side) traffic")
+	clone_percent  = flag.Float64("b.percent", 100.0, "float64 percentage of traffic to send to clone (B Side)")
+
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
 	total_unfulfilled = expvar.NewInt("total_unfulfilled")
@@ -486,8 +490,9 @@ func (nopCloser) Close() error { return nil }
 // - Nothing else...
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
-	// Normal mechanism for expvar doesnt work with ReverseProxy
-	if req.URL.Path == "/debug/vars" {
+	//
+	// Normal mechanism for expvar support doesnt work with ReverseProxy
+	if req.URL.Path == "/debug/vars" && req.Method == "GET" {
 		expvar.Handler().ServeHTTP(rw, req)
 		return
 	}
@@ -780,21 +785,6 @@ func init() {
 }
 func logStatus() {
 	log.WithFields(log.Fields{
-		"version":    version_str,
-		"proxy_port": *listen_port,
-		"proxy_tls":  len(*tls_key) > 0,
-		"a_url":      *target_url,
-		"a_timeout":  *target_timeout,
-		"a_rewrite":  *target_rewrite,
-		"b_url":      *clone_url,
-		"b_timeout":  *clone_timeout,
-		"b_rewrite":  *clone_rewrite,
-		"b_percent":  *clone_percent,
-	}).Info("Cloneproxy Status")
-	return
-}
-func logStatus2() {
-	log.WithFields(log.Fields{
 		"version":           version_str,
 		"cli":               strings.Join(os.Args, " "),
 		"total_matches":     total_matches.Value(),
@@ -867,12 +857,13 @@ func main() {
 	cloneURL := parseUrlWithDefaults(*clone_url)
 	proxy := NewCloneProxy(targetURL, *target_timeout, *target_rewrite, *target_insecure, cloneURL, *clone_timeout, *clone_rewrite, *clone_insecure)
 
-	// Regular publication of status
+	//
+	// Regular publication of status messages
 	c := cron.New()
-	//c.AddFunc("0 0/15 * * *", logStatus2)
-	c.AddFunc("0 0/2 * * *", logStatus2)
+	c.AddFunc("0 0/15 * * *", logStatus)
+	//c.AddFunc("0 0/2 * * *", logStatus)
 	c.Start()
-	logStatus2()
+	logStatus()
 
 	if len(*tls_key) > 0 {
 		log.Fatal(http.ListenAndServeTLS(*listen_port, *tls_cert, *tls_key, proxy))
