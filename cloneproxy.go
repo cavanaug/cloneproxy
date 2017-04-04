@@ -29,6 +29,10 @@
 // -[Done-0331] Add support for debug/service endpoint on /debug/vars
 // -[Done-0331] Add support regular status log messages (every 15min)
 // -[Done-0331] Add tracking for matches/mismatches/unfulfilled/skipped
+// -[Done-0403] Add tracking of duration for all cases
+// -[Done-0403] Triple check close handling for requests
+// -[Done-0404] Adjust default params for Transport
+// -[Done-0404] Add support for increasing socket limits
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
 
@@ -55,11 +59,12 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 var (
-	version_str = "20170403.1 (cavanaug)"
+	version_str = "20170403.3 (cavanaug)"
 
 	// Console flags
 	version     = flag.Bool("v", false, "show version number")
@@ -71,12 +76,12 @@ var (
 	tls_cert    = flag.String("cert.pem", "", "path to the TLS certificate file")
 
 	target_url      = flag.String("a", "http://localhost:8080", "where target (A-Side) traffic goes")
-	target_timeout  = flag.Int("a.timeout", 3, "timeout in seconds for target (A-Side) traffic")
+	target_timeout  = flag.Int("a.timeout", 5, "timeout in seconds for target (A-Side) traffic")
 	target_rewrite  = flag.Bool("a.rewrite", false, "rewrite the host header when proxying target (A-Side) traffic")
 	target_insecure = flag.Bool("a.insecure", false, "insecure SSL validation for target (A-Side) traffic")
 
 	clone_url      = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
-	clone_timeout  = flag.Int("b.timeout", 3, "timeout in seconds for clone (B-Side) traffic")
+	clone_timeout  = flag.Int("b.timeout", 5, "timeout in seconds for clone (B-Side) traffic")
 	clone_rewrite  = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
 	clone_insecure = flag.Bool("b.insecure", false, "insecure SSL validation for clone (B-Side) traffic")
 	clone_percent  = flag.Float64("b.percent", 100.0, "float64 percentage of traffic to send to clone (B Side)")
@@ -85,6 +90,7 @@ var (
 	total_mismatches  = expvar.NewInt("total_mismatches")
 	total_unfulfilled = expvar.NewInt("total_unfulfilled")
 	total_skipped     = expvar.NewInt("total_skipped")
+	t_origin          = time.Now()
 )
 
 // **********************************************************************************
@@ -531,27 +537,33 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		Close:         req.Close,
 	}
 
-	defer req.Body.Close()
 	//defer target_req.Body.Close()
 	//defer clone_req.Body.Close()
 
 	// Process Target
 	target_statuscode, target_contentlength := p.ServeTargetHTTP(rw, target_req, uid)
+	req.Body.Close()
 
 	// Process Clone
 	//    iff Target returned without server error
 	//        && random number is less than percent
+	duration := time.Since(t).Nanoseconds() / 1000000
 	switch {
 	case target_statuscode < 500: // NON-SERVER ERROR
 		if *clone_percent == 100.0 || clone_random < *clone_percent {
 			clone_statuscode, clone_contentlength = p.ServeCloneHTTP(clone_req, uid)
+			// Ultra simple timing information for total of both a & b
+			duration = time.Since(t).Nanoseconds() / 1000000
 		}
 	case target_statuscode >= 500: // SERVER ERROR
 		total_skipped.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":            uid,
+			"request_method":  req.Method,
+			"request_path":    req.URL.RequestURI(),
 			"a_response_code": target_statuscode,
 			"b_response_code": 0,
+			"duration":        duration,
 		}).Info("Proxy Clone Request Skipped")
 		return
 	}
@@ -562,14 +574,14 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		total_unfulfilled.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":            uid,
+			"request_method":  req.Method,
+			"request_path":    req.URL.RequestURI(),
 			"a_response_code": target_statuscode,
 			"b_response_code": clone_statuscode,
+			"duration":        duration,
 		}).Error("Proxy Clone Request Unfulfilled")
 		return
 	}
-
-	// Ultra simple timing information for total of both a & b
-	duration := time.Since(t).Nanoseconds() / 1000000
 
 	// Clone/Target Mismatch
 	// - This means disagreement between Clone & Target
@@ -584,6 +596,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"b_response_code":   clone_statuscode,
 			"a_response_length": target_contentlength,
 			"b_response_length": clone_contentlength,
+			"duration":          duration,
 		}).Warn("CloneProxy Responses Mismatch")
 	} else {
 		total_matches.Add(1)
@@ -594,7 +607,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"request_contentlength": req.ContentLength,
 			"response_code":         target_statuscode,
 			"response_length":       target_contentlength,
-			"response_time":         duration,
+			"duration":              duration,
 		}).Info("CloneProxy Responses Match")
 	}
 
@@ -753,8 +766,10 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   time.Duration(time.Duration(target_timeout) * time.Second),
-				KeepAlive: 30 * time.Second,
+				KeepAlive: 60 * time.Second,
 			}).Dial,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 50,
 			TLSHandshakeTimeout: 3 * time.Second,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: target_insecure,
@@ -764,8 +779,10 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   time.Duration(time.Duration(clone_timeout) * time.Second),
-				KeepAlive: 30 * time.Second,
+				KeepAlive: 60 * time.Second,
 			}).Dial,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 50,
 			TLSHandshakeTimeout: 3 * time.Second,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: clone_insecure,
@@ -792,8 +809,24 @@ func logStatus() {
 		"total_mismatches":  total_mismatches.Value(),
 		"total_unfulfilled": total_unfulfilled.Value(),
 		"total_skipped":     total_skipped.Value(),
+		"uptime":            time.Since(t_origin).String(),
 	}).Info("Cloneproxy Status")
 	return
+}
+
+func increaseTCPLimits() {
+	var rLimit syscall.Rlimit
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		fmt.Printf("Error: Initialization (%s)\n", err)
+		os.Exit(1)
+	}
+	rLimit.Cur = 8192
+	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		fmt.Printf("Error: Initialization (%s)\n", err)
+		os.Exit(1)
+	}
 }
 
 func main() {
@@ -852,6 +885,7 @@ func main() {
 
 	//
 	// Begin actual main function
+	increaseTCPLimits()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	targetURL := parseUrlWithDefaults(*target_url)
@@ -862,10 +896,9 @@ func main() {
 	// Regular publication of status messages
 	c := cron.New()
 	c.AddFunc("0 0/15 * * *", logStatus)
-	//c.AddFunc("0 0/2 * * *", logStatus)
 	c.Start()
-	logStatus()
 
+	logStatus()
 	if len(*tls_key) > 0 {
 		log.Fatal(http.ListenAndServeTLS(*listen_port, *tls_cert, *tls_key, proxy))
 	} else {
