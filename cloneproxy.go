@@ -435,7 +435,6 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	}).Debug("Proxy Request")
 
 	res, err := transport.RoundTrip(outreq)
-	defer res.Body.Close() // ensure we dont bleed connections
 	if err != nil {
 		log.WithFields(log.Fields{
 			"uuid":          uid,
@@ -445,6 +444,8 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		}).Error("Proxy Response")
 		return http.StatusBadGateway, int64(0)
 	}
+	defer res.Body.Close() // ensure we dont bleed connections
+
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
