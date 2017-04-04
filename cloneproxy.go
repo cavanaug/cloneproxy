@@ -65,17 +65,18 @@ import (
 )
 
 var (
-	version_str = "20170401.1 (cavanaug)"
+	version_str = "20170401.2 (cavanaug)"
 
 	// Console flags
-	version     = flag.Bool("v", false, "show version number")
-	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
-	loglevel    = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
+	version       = flag.Bool("v", false, "show version number")
+	expand_maxtcp = flag.Uint64("custom.maxtcp", 4096, "cloneproxy maximum tcp sockets for use")
+	jsonLogging   = flag.Bool("j", false, "write the logs in json for easier processing")
+	loglevel      = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 
-	listen_port    = flag.String("l", ":8888", "port to listen for requests")
-	listen_timeout = flag.Int("l.timeout", 900, "timeout for clients communicating to server")
-	tls_key        = flag.String("key.pem", "", "path to the TLS private key file")
-	tls_cert       = flag.String("cert.pem", "", "path to the TLS certificate file")
+	listen_port    = flag.String("s", ":8888", "server port to listen for requests")
+	listen_timeout = flag.Int("s.timeout", 900, "server timeout for clients communicating to server")
+	tls_cert       = flag.String("s.tlscert", "", "path to the TLS certificate file")
+	tls_key        = flag.String("s.tlskey", "", "path to the TLS private key file")
 
 	target_url      = flag.String("a", "http://localhost:8080", "where target (A-Side) traffic goes")
 	target_timeout  = flag.Int("a.timeout", 5, "timeout in seconds for target (A-Side) traffic")
@@ -823,7 +824,7 @@ func increaseTCPLimits() {
 		fmt.Printf("Error: Initialization (%s)\n", err)
 		os.Exit(1)
 	}
-	rLimit.Cur = 8192
+	rLimit.Cur = *expand_maxtcp
 	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 	if err != nil {
 		fmt.Printf("Error: Initialization (%s)\n", err)
