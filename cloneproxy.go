@@ -31,8 +31,9 @@
 // -[Done-0331] Add tracking for matches/mismatches/unfulfilled/skipped
 // -[Done-0403] Add tracking of duration for all cases
 // -[Done-0403] Triple check close handling for requests
-// -[Done-0404] Adjust default params for Transport
-// -[Done-0404] Add support for increasing socket limits
+// -[Done-0403] Adjust default params for Transport
+// -[Done-0403] Add support for increasing socket limits
+// -[Done-0404] Set client readtimeout & writetimeout
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
 
@@ -64,16 +65,17 @@ import (
 )
 
 var (
-	version_str = "20170403.3 (cavanaug)"
+	version_str = "20170401.1 (cavanaug)"
 
 	// Console flags
 	version     = flag.Bool("v", false, "show version number")
 	jsonLogging = flag.Bool("j", false, "write the logs in json for easier processing")
 	loglevel    = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
 
-	listen_port = flag.String("l", ":8888", "port to accept requests")
-	tls_key     = flag.String("key.pem", "", "path to the TLS private key file")
-	tls_cert    = flag.String("cert.pem", "", "path to the TLS certificate file")
+	listen_port    = flag.String("l", ":8888", "port to listen for requests")
+	listen_timeout = flag.Int("l.timeout", 900, "timeout for clients communicating to server")
+	tls_key        = flag.String("key.pem", "", "path to the TLS private key file")
+	tls_cert       = flag.String("cert.pem", "", "path to the TLS certificate file")
 
 	target_url      = flag.String("a", "http://localhost:8080", "where target (A-Side) traffic goes")
 	target_timeout  = flag.Int("a.timeout", 5, "timeout in seconds for target (A-Side) traffic")
@@ -770,7 +772,7 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			}).Dial,
 			MaxIdleConns:        50,
 			MaxIdleConnsPerHost: 50,
-			TLSHandshakeTimeout: 3 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: target_insecure,
 			},
@@ -783,7 +785,7 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			}).Dial,
 			MaxIdleConns:        50,
 			MaxIdleConnsPerHost: 50,
-			TLSHandshakeTimeout: 3 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: clone_insecure,
 			},
@@ -899,9 +901,16 @@ func main() {
 	c.Start()
 
 	logStatus()
+	s := &http.Server{
+		Addr:         *listen_port,
+		WriteTimeout: time.Duration(time.Duration(*listen_timeout) * time.Second),
+		ReadTimeout:  time.Duration(time.Duration(*listen_timeout) * time.Second),
+		Handler:      proxy,
+		// Probably should add some denial of service max sizes etc...
+	}
 	if len(*tls_key) > 0 {
-		log.Fatal(http.ListenAndServeTLS(*listen_port, *tls_cert, *tls_key, proxy))
+		log.Fatal(s.ListenAndServeTLS(*tls_cert, *tls_key))
 	} else {
-		log.Fatal(http.ListenAndServe(*listen_port, proxy))
+		log.Fatal(s.ListenAndServe())
 	}
 }
