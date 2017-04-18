@@ -36,6 +36,7 @@
 // -[Done-0404] Set client readtimeout & writetimeout
 // - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
 // - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
+// -[Done-0418] Regular status messages as part of default level 1 (Warn) setting
 
 package main
 
@@ -65,7 +66,7 @@ import (
 )
 
 var (
-	version_str = "20170401.2 (cavanaug)"
+	version_str = "20170418.1 (cavanaug)"
 
 	// Console flags
 	version       = flag.Bool("v", false, "show version number")
@@ -814,7 +815,7 @@ func logStatus() {
 		"total_unfulfilled": total_unfulfilled.Value(),
 		"total_skipped":     total_skipped.Value(),
 		"uptime":            time.Since(t_origin).String(),
-	}).Info("Cloneproxy Status")
+	}).Warn("Cloneproxy Status")
 	return
 }
 
@@ -908,7 +909,7 @@ func main() {
 		WriteTimeout: time.Duration(time.Duration(*listen_timeout) * time.Second),
 		ReadTimeout:  time.Duration(time.Duration(*listen_timeout) * time.Second),
 		Handler:      proxy,
-		// Probably should add some denial of service max sizes etc...
+		// TODO: Probably should add some denial of service max sizes etc...
 	}
 	if len(*tls_key) > 0 {
 		log.Fatal(s.ListenAndServeTLS(*tls_cert, *tls_key))
