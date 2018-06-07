@@ -1,0 +1,22 @@
+{
+        Version: false                        # show version number
+        ExpandMaxTcp: 4096                    # cloneproxy maximum tcp sockets for use
+        JsonLogging: false                    # write the logs in json for easier processing
+        LogLevel: 1                           # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
+
+        ListenPort: ":8888"                   # server port to listen for requests
+        ListenTimeout: 900                    # server timeout for clients communicating to server
+        TlsCert: ""                           # path to the TLS certificate file
+        TlsKey: ""                            # path to the TLS private key file
+
+        TargetUrl: "http://localhost:8080"    # where target (A-Side) traffic goes
+        TargetTimeout: 5                      # timeout in seconds for target (A-Side) traffic
+        TargetRewrite: false                  # rewrite the host header when proxying target (A-Side) traffic
+        TargetInsecure: false                 # insecure SSL validation for target (A-Side) traffic
+
+        CloneUrl: "http://localhost:8081"     # where clone (B-Side) traffic goes
+        CloneTimeout: 5                       # timeout in seconds for clone (B-Side) traffic
+        CloneRewrite: false                   # rewrite the host header when proxying clone (B-Side) traffic
+        CloneInsecure: false                  # insecure SSL validation for clone (B-Side) traffic
+        ClonePercent: 100.0                   # float64 percentage of traffic to send to clone (B Side)
+}

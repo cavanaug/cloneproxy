@@ -49,9 +49,11 @@ import (
 	"expvar"
 	"flag"
 	"fmt"
+	"github.com/hjson/hjson-go"
 	log "github.com/Sirupsen/logrus"
 	"github.com/robfig/cron"
 	"github.com/satori/go.uuid"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -67,30 +69,34 @@ import (
 	"time"
 )
 
+type Config struct {
+	Version			bool
+	ExpandMaxTcp	uint64
+	JsonLogging		bool
+	LogLevel		int
+
+	ListenPort		string
+	ListenTimeout	int
+	TlsCert			string
+	TlsKey			string
+
+	TargetUrl		string
+	TargetTimeout	int
+	TargetRewrite	bool
+	TargetInsecure	bool
+
+	CloneUrl		string
+	CloneTimeout	int
+	CloneRewrite	bool
+	CloneInsecure	bool
+	ClonePercent	float64
+}
+
 var (
 	version_str = "20170418.1 (cavanaug)"
 
-	// Console flags
-	version       = flag.Bool("v", false, "show version number")
-	expand_maxtcp = flag.Uint64("custom.maxtcp", 4096, "cloneproxy maximum tcp sockets for use")
-	jsonLogging   = flag.Bool("j", false, "write the logs in json for easier processing")
-	loglevel      = flag.Int("loglevel", 1, "loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug")
-
-	listen_port    = flag.String("s", ":8888", "server port to listen for requests")
-	listen_timeout = flag.Int("s.timeout", 900, "server timeout for clients communicating to server")
-	tls_cert       = flag.String("s.tlscert", "", "path to the TLS certificate file")
-	tls_key        = flag.String("s.tlskey", "", "path to the TLS private key file")
-
-	target_url      = flag.String("a", "http://localhost:8080", "where target (A-Side) traffic goes")
-	target_timeout  = flag.Int("a.timeout", 5, "timeout in seconds for target (A-Side) traffic")
-	target_rewrite  = flag.Bool("a.rewrite", false, "rewrite the host header when proxying target (A-Side) traffic")
-	target_insecure = flag.Bool("a.insecure", false, "insecure SSL validation for target (A-Side) traffic")
-
-	clone_url      = flag.String("b", "http://localhost:8081", "where clone (B-Side) traffic goes")
-	clone_timeout  = flag.Int("b.timeout", 5, "timeout in seconds for clone (B-Side) traffic")
-	clone_rewrite  = flag.Bool("b.rewrite", false, "rewrite the host header when proxying clone (B-Side) traffic")
-	clone_insecure = flag.Bool("b.insecure", false, "insecure SSL validation for clone (B-Side) traffic")
-	clone_percent  = flag.Float64("b.percent", 100.0, "float64 percentage of traffic to send to clone (B Side)")
+	configData map[string]interface{}
+	config Config
 
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
@@ -98,6 +104,19 @@ var (
 	total_skipped     = expvar.NewInt("total_skipped")
 	t_origin          = time.Now()
 )
+
+
+func configuration() {
+	raw, err := ioutil.ReadFile("config.hjson")
+	if err != nil {
+		fmt.Println("Error, missing config.hjson file")
+		os.Exit(1)
+	}
+
+	hjson.Unmarshal(raw, &configData)
+	configJson, _ := json.Marshal(configData)
+	json.Unmarshal(configJson, &config)
+}
 
 // **********************************************************************************
 // Begin:  Package components  (TODO: Should probably packagize this...)
@@ -336,7 +355,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 	res_length := p.copyResponse(rw, res.Body)
 	res_time := time.Since(t).Nanoseconds() / 1000000
-	if *loglevel > 4 {
+	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "A-Side",
@@ -452,7 +471,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
-	if *loglevel > 4 {
+	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"side":            "B-Side",
@@ -557,7 +576,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	duration := time.Since(t).Nanoseconds() / 1000000
 	switch {
 	case target_statuscode < 500: // NON-SERVER ERROR
-		if *clone_percent == 100.0 || clone_random < *clone_percent {
+		if config.ClonePercent == 100.0 || clone_random < config.ClonePercent {
 			clone_statuscode, clone_contentlength = p.ServeCloneHTTP(clone_req, uid)
 			// Ultra simple timing information for total of both a & b
 			duration = time.Since(t).Nanoseconds() / 1000000
@@ -828,7 +847,7 @@ func increaseTCPLimits() {
 		fmt.Printf("Error: Initialization (%s)\n", err)
 		os.Exit(1)
 	}
-	rLimit.Cur = *expand_maxtcp
+	rLimit.Cur = config.ExpandMaxTcp
 	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 	if err != nil {
 		fmt.Printf("Error: Initialization (%s)\n", err)
@@ -836,7 +855,12 @@ func increaseTCPLimits() {
 	}
 }
 
+func rewrite() {
+
+}
+
 func main() {
+	configuration()
 	//
 	// Handle Option Processing
 	flag.Usage = func() {
@@ -857,35 +881,35 @@ func main() {
 	}
 	flag.Parse()
 
-	if *version {
+	if config.Version {
 		fmt.Printf("cloneproxy version: %s\n", version_str)
 		os.Exit(0)
 	}
 
 	log.SetOutput(os.Stdout)
 	// Log as JSON instead of the default ASCII formatter
-	if *jsonLogging {
+	if config.JsonLogging {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 	// Set appropriate logging level
 	switch {
-	case *loglevel == 0:
+	case config.LogLevel == 0:
 		log.SetLevel(log.ErrorLevel)
-	case *loglevel == 1:
+	case config.LogLevel == 1:
 		log.SetLevel(log.WarnLevel)
-	case *loglevel == 2:
+	case config.LogLevel == 2:
 		log.SetLevel(log.InfoLevel)
-	case *loglevel >= 3:
+	case config.LogLevel >= 3:
 		log.SetLevel(log.DebugLevel)
 	}
 
-	if !strings.HasPrefix(*target_url, "http") {
-		fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", *target_url)
+	if !strings.HasPrefix(config.TargetUrl, "http") {
+		fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", config.TargetUrl)
 		flag.Usage()
 		os.Exit(1)
 	}
-	if !strings.HasPrefix(*clone_url, "http") {
-		fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", *clone_url)
+	if !strings.HasPrefix(config.CloneUrl, "http") {
+		fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", config.CloneUrl)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -895,9 +919,9 @@ func main() {
 	increaseTCPLimits()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
-	targetURL := parseUrlWithDefaults(*target_url)
-	cloneURL := parseUrlWithDefaults(*clone_url)
-	proxy := NewCloneProxy(targetURL, *target_timeout, *target_rewrite, *target_insecure, cloneURL, *clone_timeout, *clone_rewrite, *clone_insecure)
+	targetURL := parseUrlWithDefaults(config.TargetUrl)
+	cloneURL := parseUrlWithDefaults(config.CloneUrl)
+	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 
 	//
 	// Regular publication of status messages
@@ -907,14 +931,14 @@ func main() {
 
 	logStatus()
 	s := &http.Server{
-		Addr:         *listen_port,
-		WriteTimeout: time.Duration(time.Duration(*listen_timeout) * time.Second),
-		ReadTimeout:  time.Duration(time.Duration(*listen_timeout) * time.Second),
+		Addr:         config.ListenPort,
+		WriteTimeout: time.Duration(time.Duration(config.ListenTimeout) * time.Second),
+		ReadTimeout:  time.Duration(time.Duration(config.ListenTimeout) * time.Second),
 		Handler:      proxy,
 		// TODO: Probably should add some denial of service max sizes etc...
 	}
-	if len(*tls_key) > 0 {
-		log.Fatal(s.ListenAndServeTLS(*tls_cert, *tls_key))
+	if len(config.TlsKey) > 0 {
+		log.Fatal(s.ListenAndServeTLS(config.TlsCert, config.TlsKey))
 	} else {
 		log.Fatal(s.ListenAndServe())
 	}
