@@ -1,42 +1,44 @@
-// ReverseCloneProxy
-// - A reverse proxy with a forking of traffic to a clone
-//
-// You can proxy traffic to production & staging simultaneously.
-// This can be used for development/testing/benchmarking, it can
-// also be used to replicate traffic while moving across clouds.
-//
-// TODO:
-// -[Done] Create cli with simple reverse proxy (no clone)
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Add struct/interface model for ReverseCloneProxy
-// -[Done] Should use ServeHTTP which copies the req and calls ServeTargetHTTP
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Add sequential calling of ServeCloneHTTP
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Add support for timeouts on a & b side
-// -[Done] Sync calling of ServeTargetHTTP & only on success call ServeCloneHTTP
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Cleanup loglevelging & Add logging similar to what was done for our custom teeproxy
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Add in support for percentage of traffic to clone
-// -[Done] <<Testing/Checkpoint>>
-// -[Done] Add separate context for clone to prevent context cancel exits.
-// -[Done-0328] Cleanup context logging & logging in general
-// -[Done-0328] Add support for Proxy so I can test this thing from my cube
-// -[Done-0328] Add support for detecting mismatch in target/clone and generate warning
-// -[Done-0328] Fixed a bug with XFF handling on B side
-// -[Done-0328] Add very basic timing information for each side & total
-// -[Done-0331] Add support for debug/service endpoint on /debug/vars
-// -[Done-0331] Add support regular status log messages (every 15min)
-// -[Done-0331] Add tracking for matches/mismatches/unfulfilled/skipped
-// -[Done-0403] Add tracking of duration for all cases
-// -[Done-0403] Triple check close handling for requests
-// -[Done-0403] Adjust default params for Transport
-// -[Done-0403] Add support for increasing socket limits
-// -[Done-0404] Set client readtimeout & writetimeout
-// - (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
-// - (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
-// -[Done-0418] Regular status messages as part of default level 1 (Warn) setting
+/*
+ReverseCloneProxy
+- A reverse proxy with a forking of traffic to a clone
+
+You can proxy traffic to production & staging simultaneously.
+This can be used for development/testing/benchmarking, it can
+also be used to replicate traffic while moving across clouds.
+
+TODO:
+-[Done] Create cli with simple reverse proxy (no clone)
+-[Done] <<Testing/Checkpoint>>
+-[Done] Add struct/interface model for ReverseCloneProxy
+-[Done] Should use ServeHTTP which copies the req and calls ServeTargetHTTP
+-[Done] <<Testing/Checkpoint>>
+-[Done] Add sequential calling of ServeCloneHTTP
+-[Done] <<Testing/Checkpoint>>
+-[Done] Add support for timeouts on a & b side
+-[Done] Sync calling of ServeTargetHTTP & only on success call ServeCloneHTTP
+-[Done] <<Testing/Checkpoint>>
+-[Done] Cleanup loglevelging & Add logging similar to what was done for our custom teeproxy
+-[Done] <<Testing/Checkpoint>>
+-[Done] Add in support for percentage of traffic to clone
+-[Done] <<Testing/Checkpoint>>
+-[Done] Add separate context for clone to prevent context cancel exits.
+-[Done-0328] Cleanup context logging & logging in general
+-[Done-0328] Add support for Proxy so I can test this thing from my cube
+-[Done-0328] Add support for detecting mismatch in target/clone and generate warning
+-[Done-0328] Fixed a bug with XFF handling on B side
+-[Done-0328] Add very basic timing information for each side & total
+-[Done-0331] Add support for debug/service endpoint on /debug/vars
+-[Done-0331] Add support regular status log messages (every 15min)
+-[Done-0331] Add tracking for matches/mismatches/unfulfilled/skipped
+-[Done-0403] Add tracking of duration for all cases
+-[Done-0403] Triple check close handling for requests
+-[Done-0403] Adjust default params for Transport
+-[Done-0403] Add support for increasing socket limits
+-[Done-0404] Set client readtimeout & writetimeout
+- (Defer to 2.0) Add support for retry on BadGateway on clone (Wait for go 1.9)
+- (Defer to 2.0) Add support for detailed performance metrics on target/clone responses (see davecheney/httpstat)
+-[Done-0418] Regular status messages as part of default level 1 (Warn) setting
+*/
 
 package main
 
@@ -508,7 +510,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	// Initialize tracking vars
-	uid := uuid.NewV4()
+	uid, _ := uuid.NewV4()
 	t := time.Now()
 
 	// Copy Body
