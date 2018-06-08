@@ -62,6 +62,7 @@ import (
 	//"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -90,7 +91,13 @@ type Config struct {
 	CloneRewrite	bool
 	CloneInsecure	bool
 	ClonePercent	float64
+
+	Rewrite 		bool
+	RewriteRules	[]string
+	MatchingRule	string
 }
+
+const exclusionFlag = "!"
 
 var (
 	version_str = "20170418.1 (cavanaug)"
@@ -543,7 +550,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	*target_req = *req
 	target_req.Body = nopCloser{b1}
 
-	// Clone is a dep copy of original req
+	// Clone is a deep copy of original req
 	clone_statuscode := 0
 	clone_contentlength := int64(0)
 	clone_random := rand.New(rand.NewSource(time.Now().UnixNano())).Float64() * 100
@@ -856,30 +863,54 @@ func increaseTCPLimits() {
 }
 
 func rewrite() {
+	rewrite := config.CloneUrl
 
+	if len(config.RewriteRules) % 2 != 0 {
+		fmt.Println("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution")
+		os.Exit(1)
+	}
+
+	for i := 0; i < len(config.RewriteRules) - 1; i += 2 {
+		pattern, err := regexp.Compile(config.RewriteRules[i])
+
+		if err != nil {
+			fmt.Printf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
+			return
+		}
+
+		substitution := config.RewriteRules[i+1]
+		rewrite = pattern.ReplaceAllString(rewrite, substitution)
+	}
+	
+	config.CloneUrl = rewrite
 }
 
 func main() {
 	configuration()
-	//
+
+	if config.Rewrite {
+		rewrite()
+	}
+
 	// Handle Option Processing
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
-		fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, `
+			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
+			   fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
+			   flag.PrintDefaults()
+			   fmt.Fprintf(os.Stderr, `
 %s:
   HTTP_PROXY    proxy for HTTP requests; complete URL or HOST[:PORT]
                 used for HTTPS requests if HTTPS_PROXY undefined
   HTTPS_PROXY   proxy for HTTPS requests; complete URL or HOST[:PORT]
   NO_PROXY      comma-separated list of hosts to exclude from proxy
 `, "ENVIRONMENT")
-		fmt.Fprintf(os.Stderr, `
+			   fmt.Fprintf(os.Stderr, `
 %s:
   WebSite       https://github.com/cavanaug/cloneproxy
 `, "MISC")
 	}
 	flag.Parse()
+
 
 	if config.Version {
 		fmt.Printf("cloneproxy version: %s\n", version_str)
@@ -914,16 +945,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	//
 	// Begin actual main function
 	increaseTCPLimits()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+
+	if config.MatchingRule != "" {
+		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
+		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
+		pattern, err := regexp.Compile(config.MatchingRule)
+
+		if err != nil {
+			fmt.Printf("Error: %s is an invalid regex, not sending to %s", config.MatchingRule, config.CloneUrl)
+			config.CloneUrl = ""
+		}
+
+		matches := pattern.MatchString(config.TargetUrl)
+		if (exclude && matches) || (!exclude && !matches) {
+			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
+			config.CloneUrl = ""
+
+		}
+	}
 
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
 	cloneURL := parseUrlWithDefaults(config.CloneUrl)
 	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 
-	//
 	// Regular publication of status messages
 	c := cron.New()
 	c.AddFunc("0 0/15 * * *", logStatus)

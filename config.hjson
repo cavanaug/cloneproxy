@@ -1,22 +1,76 @@
 {
-        Version: false                        # show version number
-        ExpandMaxTcp: 4096                    # cloneproxy maximum tcp sockets for use
-        JsonLogging: false                    # write the logs in json for easier processing
-        LogLevel: 1                           # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
+        # show version number
+        "Version": false
 
-        ListenPort: ":8888"                   # server port to listen for requests
-        ListenTimeout: 900                    # server timeout for clients communicating to server
-        TlsCert: ""                           # path to the TLS certificate file
-        TlsKey: ""                            # path to the TLS private key file
+        # cloneproxy maximum tcp sockets for use
+        "ExpandMaxTcp": 4096
 
-        TargetUrl: "http://localhost:8080"    # where target (A-Side) traffic goes
-        TargetTimeout: 5                      # timeout in seconds for target (A-Side) traffic
-        TargetRewrite: false                  # rewrite the host header when proxying target (A-Side) traffic
-        TargetInsecure: false                 # insecure SSL validation for target (A-Side) traffic
+        # write the logs in json for easier processing
+        "JsonLogging": false
 
-        CloneUrl: "http://localhost:8081"     # where clone (B-Side) traffic goes
-        CloneTimeout: 5                       # timeout in seconds for clone (B-Side) traffic
-        CloneRewrite: false                   # rewrite the host header when proxying clone (B-Side) traffic
-        CloneInsecure: false                  # insecure SSL validation for clone (B-Side) traffic
-        ClonePercent: 100.0                   # float64 percentage of traffic to send to clone (B Side)
+        # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
+        "LogLevel": 1
+
+
+
+        # server port to listen for requests
+        "ListenPort": ":8888"
+
+        # server timeout for clients communicating to server
+        "ListenTimeout": 900
+
+        # path to the TLS certificate file
+        "TlsCert": ""
+
+        # path to the TLS private key file
+        "TlsKey": ""
+
+
+
+        # where target (A-Side) traffic goes
+        "TargetUrl": "http://localhost:8080"
+
+        # timeout in seconds for target (A-Side) traffic
+        "TargetTimeout": 5
+
+        # rewrite the host header when proxying target (A-Side) traffic
+        "TargetRewrite": false
+
+        # insecure SSL validation for target (A-Side) traffic
+        "TargetInsecure": false
+
+
+
+        # where clone (B-Side) traffic goes
+        "CloneUrl": "http://localhost:8081"
+
+        # timeout in seconds for clone (B-Side) traffic
+        "CloneTimeout": 5
+
+        # rewrite the host header when proxing clone (B-Side) traffic
+        "CloneRewrite": false
+
+        # insecure SSL validation for clone (B-Side) traffic
+        "CloneInsecure": false
+
+        # float64 percentage of traffic to send to clone (B Side)
+        "ClonePercent": 100.0
+
+
+        # whether to rewrite the clone (B-side) URL
+        "Rewrite": true
+
+        "RewriteRules":
+        [
+            # pattern   substitution
+            "\/\/\\w+:" "//localhost:"
+            ":\\d+$"    ":8082"
+        ]
+
+
+        # Use CloneUrl if TargetUrls matches the pattern, where pattern is a regular expression
+        # Always use CloneUrl if empty
+        # '!' is a pattern prefix used as an exclude tag
+        # e.g. Use CloneUrl if TargetUrl does not match the pattern
+        "MatchingRule": "localhost"
 }
