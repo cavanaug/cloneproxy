@@ -98,6 +98,7 @@ type Config struct {
 }
 
 const exclusionFlag = "!"
+const configFile = "config.hjson"
 
 var (
 	version_str = "20170418.1 (cavanaug)"
@@ -114,9 +115,9 @@ var (
 
 
 func configuration() {
-	raw, err := ioutil.ReadFile("config.hjson")
+	raw, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		fmt.Println("Error, missing config.hjson file")
+		fmt.Printf("Error, missing %s file", configFile)
 		os.Exit(1)
 	}
 
@@ -862,34 +863,36 @@ func increaseTCPLimits() {
 	}
 }
 
-func rewrite() {
+func Rewrite() error {
 	rewrite := config.CloneUrl
 
-	if len(config.RewriteRules) % 2 != 0 {
-		fmt.Println("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution")
-		os.Exit(1)
+	if len(config.RewriteRules) % 2 != 0 || len(config.RewriteRules) < 1 {
+		return fmt.Errorf("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution\n")
 	}
 
 	for i := 0; i < len(config.RewriteRules) - 1; i += 2 {
 		pattern, err := regexp.Compile(config.RewriteRules[i])
 
 		if err != nil {
-			fmt.Printf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
-			return
+			return fmt.Errorf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
 		}
 
-		substitution := config.RewriteRules[i+1]
-		rewrite = pattern.ReplaceAllString(rewrite, substitution)
+		rewrite = pattern.ReplaceAllString(rewrite, config.RewriteRules[i+1])
 	}
 	
 	config.CloneUrl = rewrite
+
+	return nil
 }
 
 func main() {
 	configuration()
 
 	if config.Rewrite {
-		rewrite()
+		err := Rewrite()
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 
 	// Handle Option Processing
