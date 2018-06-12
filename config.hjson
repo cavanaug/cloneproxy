@@ -60,6 +60,11 @@
         # whether to rewrite the clone (B-side) URL
         "Rewrite": true
 
+        #
+        # Pattern-Substitution rules are handled sequentially
+        # e.g. the original URI is /localhost:8080
+        #   :\\d+$              :8080/hi    URI is now localhost:8080/hi
+        #   :\\d+/[a-z]{2}$     :8080/bye   URI is not localhost:8080/bye
         "RewriteRules":
         [
             # pattern   substitution
@@ -68,9 +73,12 @@
         ]
 
 
-        # Use CloneUrl if TargetUrls matches the pattern, where pattern is a regular expression
-        # Always use CloneUrl if empty
-        # '!' is a pattern prefix used as an exclude tag
-        # e.g. Use CloneUrl if TargetUrl does not match the pattern
+        # How to:
+        #   - Always send to clone (B-side)?
+        #       - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
+        #   - Send to clone (B-side) only if the target URL matches a pattern?
+        #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
+        #   - Send to clone (B-side) only if the target URL does not match a pattern?
+        #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
         "MatchingRule": "localhost"
 }

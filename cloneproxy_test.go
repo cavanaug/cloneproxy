@@ -15,7 +15,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s, %s... ", config.RewriteRules[0], config.RewriteRules[1])
 	err := Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -27,7 +27,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s, %s... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/ \ngot: %s\n", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	}  else {
@@ -39,7 +39,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s, %s... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/right_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/right_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -51,7 +51,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s, %s... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/6AF308SDF093JF03/queues/right_queue_name" {
-		t.Errorf("Expected: /project/6AF308SDF093JF03/queues/right_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/6AF308SDF093JF03/queues/right_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -64,13 +64,24 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s, %s... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
 		fmt.Println("passed")
 	}
 
+	fmt.Println("\nTesting sequential rules... ")
+	config.CloneUrl = "/localhost:8080"
+	config.RewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
+	err = Rewrite()
+	if config.CloneUrl != "/localhost:8080/bye" {
+		t.Errorf("Expected: /localhost:8080/bye \ngot: %s\n", config.CloneUrl)
+	} else if err != nil {
+		t.Errorf("%s", err)
+	} else {
+		fmt.Println("passed")
+	}
 
 	// test rule matching
 	fmt.Println("\nTesting rules matching (each pattern must have a corresponding substitution)...")
@@ -79,7 +90,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: %s... ", config.RewriteRules[0])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -91,7 +102,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting empty RewriteRules slice... ")
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name,\ngot: %s\n", config.CloneUrl)
+		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name \ngot: %s\n", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
