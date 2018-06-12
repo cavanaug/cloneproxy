@@ -68,6 +68,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"net/http/httputil"
 )
 
 type Config struct {
@@ -755,6 +756,43 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 	return u
 }
 
+func NewReverseProxy(target *url.URL, targetTimeout int, targetRewrite bool, targetInsecure bool) *httputil.ReverseProxy {
+	targetQuery := target.RawQuery
+	director := func(req *http.Request) {
+		req.URL.Scheme = target.Scheme
+		req.URL.Host = target.Host
+		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+		if target.Scheme == "https" || targetRewrite {
+			req.Host = target.Host
+		}
+		if targetQuery == "" || req.URL.RawQuery == "" {
+			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+		} else {
+			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+		}
+		if _, ok := req.Header["User-Agent"]; !ok {
+			// explicitly disable User-Agent so it's not set to default value
+			req.Header.Set("User-Agent", "")
+		}
+	}
+	return &httputil.ReverseProxy{
+		Director: director,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial: (&net.Dialer{
+				Timeout:   time.Duration(time.Duration(targetTimeout) * time.Second),
+				KeepAlive: 60 * time.Second,
+			}).Dial,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 50,
+			TLSHandshakeTimeout: 5 * time.Second,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: targetInsecure,
+			},
+		},
+	}
+}
+
 // select a host from the passed `targets`
 func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, target_insecure bool, clone *url.URL, clone_timeout int, clone_rewrite bool, clone_insecure bool) *ReverseClonedProxy {
 	targetQuery := target.RawQuery
@@ -952,6 +990,8 @@ func main() {
 	increaseTCPLimits()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
+	targetURL := parseUrlWithDefaults(config.TargetUrl)
+	cloneURL := parseUrlWithDefaults(config.CloneUrl)
 	if config.MatchingRule != "" {
 		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
 		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
@@ -965,19 +1005,23 @@ func main() {
 		matches := pattern.MatchString(config.TargetUrl)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
-			config.CloneUrl = ""
+			cloneURL = nil
 
 		}
 	}
 
-	targetURL := parseUrlWithDefaults(config.TargetUrl)
-	cloneURL := parseUrlWithDefaults(config.CloneUrl)
-	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	var proxy http.Handler
+	if cloneURL != nil {
+		proxy = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	} else {
+		proxy = NewReverseProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure)
+	}
 
 	// Regular publication of status messages
 	c := cron.New()
 	c.AddFunc("0 0/15 * * *", logStatus)
 	c.Start()
+
 
 	logStatus()
 	s := &http.Server{

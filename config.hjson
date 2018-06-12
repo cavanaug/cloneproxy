@@ -58,7 +58,7 @@
 
 
         # whether to rewrite the clone (B-side) URL
-        "Rewrite": true
+        "Rewrite": false
 
         #
         # Pattern-Substitution rules are handled sequentially
@@ -80,5 +80,5 @@
         #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
         #   - Send to clone (B-side) only if the target URL does not match a pattern?
         #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
-        "MatchingRule": "localhost"
+        "MatchingRule": "!localhost"
 }
