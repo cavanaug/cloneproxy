@@ -927,12 +927,32 @@ func Rewrite() error {
 	return nil
 }
 
+func MatchingRule() error {
+	if config.MatchingRule != "" {
+		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
+		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
+		pattern, err := regexp.Compile(config.MatchingRule)
+
+		if err != nil {
+			makeCloneRequest = false
+			return fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
+		}
+
+		matches := pattern.MatchString(config.TargetUrl)
+		if (exclude && matches) || (!exclude && !matches) {
+			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
+			makeCloneRequest = false
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	configuration()
 
 	if config.Rewrite {
-		err := Rewrite()
-		if err != nil {
+		if err := Rewrite(); err != nil {
 			fmt.Println(err)
 		}
 	}
@@ -996,22 +1016,9 @@ func main() {
 
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
 	cloneURL := parseUrlWithDefaults(config.CloneUrl)
-	if config.MatchingRule != "" {
-		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
-		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
-		pattern, err := regexp.Compile(config.MatchingRule)
 
-		if err != nil {
-			fmt.Printf("Error: %s is an invalid regex, not sending to %s", config.MatchingRule, config.CloneUrl)
-			config.CloneUrl = ""
-		}
-
-		matches := pattern.MatchString(config.TargetUrl)
-		if (exclude && matches) || (!exclude && !matches) {
-			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
-			makeCloneRequest = false
-
-		}
+	if err := MatchingRule(); err != nil {
+		fmt.Println(err)
 	}
 
 	var proxy http.Handler

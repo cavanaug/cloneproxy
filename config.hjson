@@ -80,5 +80,5 @@
         #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
         #   - Send to clone (B-side) only if the target URL does not match a pattern?
         #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
-        "MatchingRule": "localhost"
+        "MatchingRule": ""
 }
