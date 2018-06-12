@@ -59,7 +59,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	//"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
@@ -68,7 +67,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"net/http/httputil"
 )
 
 type Config struct {
@@ -106,6 +104,8 @@ var (
 
 	configData map[string]interface{}
 	config Config
+
+	makeCloneRequest = true
 
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
@@ -585,7 +585,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	duration := time.Since(t).Nanoseconds() / 1000000
 	switch {
 	case target_statuscode < 500: // NON-SERVER ERROR
-		if config.ClonePercent == 100.0 || clone_random < config.ClonePercent {
+		if makeCloneRequest && (config.ClonePercent == 100.0 || clone_random < config.ClonePercent) {
 			clone_statuscode, clone_contentlength = p.ServeCloneHTTP(clone_req, uid)
 			// Ultra simple timing information for total of both a & b
 			duration = time.Since(t).Nanoseconds() / 1000000
@@ -605,7 +605,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	// Clone SERVER ERROR after procesed Target
 	// - This means LOST data at clone
-	if clone_statuscode >= 500 {
+	if makeCloneRequest && clone_statuscode >= 500 {
 		total_unfulfilled.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":            uid,
@@ -621,7 +621,11 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// Clone/Target Mismatch
 	// - This means disagreement between Clone & Target
 	// - This could be completely ok dependent on how responses are handled
-	if (clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength) {
+	infoSuccess := "Proxy Clone Request Skipped"
+	if makeCloneRequest {
+		infoSuccess = "CloneProxy Responses Match"
+	}
+	if makeCloneRequest && ((clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength)) {
 		total_mismatches.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":              uid,
@@ -643,7 +647,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"response_code":         target_statuscode,
 			"response_length":       target_contentlength,
 			"duration":              duration,
-		}).Info("CloneProxy Responses Match")
+		}).Info(infoSuccess)
 	}
 
 	return
@@ -756,7 +760,7 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 	return u
 }
 
-func NewReverseProxy(target *url.URL, targetTimeout int, targetRewrite bool, targetInsecure bool) *httputil.ReverseProxy {
+func NewReverseProxy(target *url.URL, targetTimeout int, targetRewrite bool, targetInsecure bool) *ReverseClonedProxy {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
@@ -775,7 +779,7 @@ func NewReverseProxy(target *url.URL, targetTimeout int, targetRewrite bool, tar
 			req.Header.Set("User-Agent", "")
 		}
 	}
-	return &httputil.ReverseProxy{
+	return &ReverseClonedProxy{
 		Director: director,
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -1005,13 +1009,13 @@ func main() {
 		matches := pattern.MatchString(config.TargetUrl)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
-			cloneURL = nil
+			makeCloneRequest = false
 
 		}
 	}
 
 	var proxy http.Handler
-	if cloneURL != nil {
+	if makeCloneRequest {
 		proxy = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 	} else {
 		proxy = NewReverseProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure)
