@@ -8,7 +8,6 @@ import (
 	"net/http/httputil"
 	"log"
 	"io/ioutil"
-	"crypto/sha1"
 	"net/http/httptest"
 	"io"
 )
@@ -24,7 +23,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 	err := Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -36,7 +35,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/", "got", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	}  else {
@@ -48,7 +47,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/right_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/right_queue_name", "got", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -60,7 +59,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/6AF308SDF093JF03/queues/right_queue_name" {
-		t.Errorf("Expected: /project/6AF308SDF093JF03/queues/right_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/6AF308SDF093JF03/queues/right_queue_name", "got", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -73,7 +72,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -85,7 +84,7 @@ func TestRewrite(t *testing.T) {
 	config.RewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
 	err = Rewrite()
 	if config.CloneUrl != "/localhost:8080/bye" {
-		t.Errorf("Expected: /localhost:8080/bye, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/localhost:8080/bye", "got", config.CloneUrl)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -99,7 +98,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting Rewrite Rules: '%s'... ", config.RewriteRules[0])
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -111,7 +110,7 @@ func TestRewrite(t *testing.T) {
 	fmt.Printf("\tTesting empty RewriteRules slice... ")
 	err = Rewrite()
 	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Errorf("Expected: /project/5AF308SDF093JF02/queues/wrong_queue_name, Got: %s\n", config.CloneUrl)
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -133,7 +132,7 @@ func TestMatchingRule(t *testing.T) {
 	makeCloneRequest = true
 	err := MatchingRule()
 	if !makeCloneRequest {
-		t.Errorf("Expected: makeCloneRequest to be TRUE, Got: FALSE\n")
+		t.Error("expected", true, "got", false)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -146,7 +145,7 @@ func TestMatchingRule(t *testing.T) {
 	makeCloneRequest = true
 	err = MatchingRule()
 	if makeCloneRequest {
-		t.Errorf("Expected: makeCloneRequest to be FALSE, Got: TRUE\n")
+		t.Error("expected", false, "got", true)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -159,7 +158,7 @@ func TestMatchingRule(t *testing.T) {
 	makeCloneRequest = true
 	err = MatchingRule()
 	if !makeCloneRequest {
-		t.Errorf("Expected: makeCloneRequest to be TRUE, Got: FALSE\n")
+		t.Error("expected", true, "got", false)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -172,7 +171,7 @@ func TestMatchingRule(t *testing.T) {
 	makeCloneRequest = true
 	err = MatchingRule()
 	if makeCloneRequest {
-		t.Errorf("Expected: makeCloneRequest to be FALSE, Got: TRUE\n")
+		t.Error("expected", false, "got", true)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -180,7 +179,10 @@ func TestMatchingRule(t *testing.T) {
 	}
 }
 
-
+var counter = struct {
+	target int
+	clone  int
+}{target: 0, clone: 0}
 func serverA(w http.ResponseWriter, req *http.Request) {
 	dump, err := httputil.DumpRequest(req, false)
 	if err != nil {
@@ -188,11 +190,9 @@ func serverA(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	body, _ := ioutil.ReadAll(req.Body)
-	s := sha1.Sum(body)
+	counter.target += 1
 
-	fmt.Printf("---> %s %s %s %s sha1:%x\n", os.Args[1], req.Method, req.URL.String(), req.UserAgent(), s)
-	fmt.Fprintf(w, "Body(sha1): %x\n", s)
+	fmt.Printf("---> %s %s %s %s\n", "8080", req.Method, req.URL.String(), req.UserAgent())
 }
 
 func serverB(w http.ResponseWriter, req *http.Request) {
@@ -202,11 +202,9 @@ func serverB(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	body, _ := ioutil.ReadAll(req.Body)
-	s := sha1.Sum(body)
+	counter.clone += 1
 
-	fmt.Printf("---> %s %s %s %s sha1:%x\n", os.Args[1], req.Method, req.URL.String(), req.UserAgent(), s)
-	fmt.Fprintf(w, "Body(sha1): %x\n", s)
+	fmt.Printf("---> %s %s %s %s\n", "8081", req.Method, req.URL.String(), req.UserAgent())
 }
 
 func CloneProxy() http.Handler {
@@ -228,6 +226,10 @@ func CloneProxy() http.Handler {
 }
 
 func TestCloneProxy(t *testing.T) {
+	config.TargetUrl = "http://localhost:8080"
+	config.CloneUrl = "http://localhost:8081"
+	config.ClonePercent = 100.0
+
 	serverTarget := http.NewServeMux()
 	serverTarget.HandleFunc("/", serverA)
 
@@ -241,6 +243,16 @@ func TestCloneProxy(t *testing.T) {
 		http.ListenAndServe("localhost:8081", serverClone)
 	}()
 
+	newReq := func(method, url string, body io.Reader) *http.Request {
+		req, err := http.NewRequest(method, url, body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return req
+	}
+
+	targetRequests := 4
+	cloneRequests := 2
 	configurations := []struct{
 		rewriteRules []string
 		matchingRule string
@@ -249,24 +261,12 @@ func TestCloneProxy(t *testing.T) {
 		{matchingRule: "!localhost"},
 	}
 
-	config.TargetUrl = "http://localhost:8080"
-	config.CloneUrl = "http://localhost:8081"
-	config.MatchingRule = "localhost"
-
 	for _, configuration := range configurations {
 		t.Run("Testing configurations..." , func(tst *testing.T) {
 			config.MatchingRule = configuration.matchingRule
 
 			ts := httptest.NewServer(CloneProxy())
 			defer ts.Close()
-
-			newReq := func(method, url string, body io.Reader) *http.Request {
-				req, err := http.NewRequest(method, url, body)
-				if err != nil {
-					fmt.Println(err)
-				}
-				return req
-			}
 
 			tests := []struct {
 				name string
@@ -283,11 +283,21 @@ func TestCloneProxy(t *testing.T) {
 					res, err := http.DefaultClient.Do(test.req)
 					defer res.Body.Close()
 					if err != nil {
-						t.Errorf("Did not expect to receive error: %s", err)
+						t.Error(err)
+					}
+					if _, err := ioutil.ReadAll(res.Body); err != nil {
+						t.Error(err)
 					}
 				})
 			}
 		})
+	}
+
+	// make sure counts are correct
+	// requests are always sent to target (we make 4 requests)
+	// we should only be making 2 requests to clone
+	if counter.target != targetRequests || counter.clone != cloneRequests {
+		t.Errorf("expected %d requests to target and %d requests to clone got %d target and %d clone\n", targetRequests, cloneRequests, counter.target, counter.clone)
 	}
 }
 
