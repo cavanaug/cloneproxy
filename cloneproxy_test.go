@@ -14,6 +14,7 @@ import (
 
 func TestRewrite(t *testing.T) {
 	fmt.Println("========TESTING REWRITE========")
+	config.Rewrite = true
 
 	// test regex
 	fmt.Println("Testing regex...")
@@ -21,9 +22,10 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"wrong_queue_name", "right_queue_name"}
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	err := Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
+
+	cloneURL, err := Rewrite(config.CloneUrl)
+	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", cloneURL.Path)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -33,9 +35,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"wrong_queue_name", ""}
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	err = Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/" {
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/", "got", cloneURL.Path)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	}  else {
@@ -45,9 +47,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	err = Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/right_queue_name", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/right_queue_name", "got", cloneURL.Path)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -57,9 +59,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	err = Rewrite()
-	if config.CloneUrl != "/project/6AF308SDF093JF03/queues/right_queue_name" {
-		t.Error("expected", "/project/6AF308SDF093JF03/queues/right_queue_name", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL.Path != "/project/6AF308SDF093JF03/queues/right_queue_name" {
+		t.Error("expected", "/project/6AF308SDF093JF03/queues/right_queue_name", "got", cloneURL.Path)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -70,9 +72,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"/queues/[0-9]++", "/right_queue_name"}
 	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	err = Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL != nil {
+		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -82,9 +84,9 @@ func TestRewrite(t *testing.T) {
 	fmt.Print("\nTesting sequential rules... ")
 	config.CloneUrl = "/localhost:8080"
 	config.RewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
-	err = Rewrite()
-	if config.CloneUrl != "/localhost:8080/bye" {
-		t.Error("expected", "/localhost:8080/bye", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL.Path != "/localhost:8080/bye" {
+		t.Error("expected", "/localhost:8080/bye", "got", cloneURL.Path)
 	} else if err != nil {
 		t.Errorf("%s", err)
 	} else {
@@ -96,9 +98,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{"wrong_queue_name"}
 	fmt.Printf("\tTesting Rewrite Rules: '%s'... ", config.RewriteRules[0])
-	err = Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL != nil {
+		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -108,9 +110,9 @@ func TestRewrite(t *testing.T) {
 	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	config.RewriteRules = []string{}
 	fmt.Printf("\tTesting empty RewriteRules slice... ")
-	err = Rewrite()
-	if config.CloneUrl != "/project/5AF308SDF093JF02/queues/wrong_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", config.CloneUrl)
+	cloneURL, err = Rewrite(config.CloneUrl)
+	if cloneURL != nil {
+		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
 		t.Errorf("Expected to receive an error message")
 	} else {
@@ -130,7 +132,7 @@ func TestMatchingRule(t *testing.T) {
 	fmt.Print("Testing inclusion rule... ")
 	config.MatchingRule = "localhost"
 	makeCloneRequest = true
-	err := MatchingRule()
+	err := MatchingRule(config.CloneUrl)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -143,7 +145,7 @@ func TestMatchingRule(t *testing.T) {
 	fmt.Print("Testing exlcusion rule... ")
 	config.MatchingRule = "!localhost"
 	makeCloneRequest = true
-	err = MatchingRule()
+	err = MatchingRule(config.CloneUrl)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err != nil {
@@ -156,7 +158,7 @@ func TestMatchingRule(t *testing.T) {
 	fmt.Print("Testing no rule... ")
 	config.MatchingRule = ""
 	makeCloneRequest = true
-	err = MatchingRule()
+	err = MatchingRule(config.CloneUrl)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -169,7 +171,7 @@ func TestMatchingRule(t *testing.T) {
 	fmt.Print("Testing invalid rule... ")
 	config.MatchingRule = "localhost:[0-9]++"
 	makeCloneRequest = true
-	err = MatchingRule()
+	err = MatchingRule(config.CloneUrl)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err == nil {
@@ -211,18 +213,11 @@ func CloneProxy() http.Handler {
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
 	cloneURL := parseUrlWithDefaults(config.CloneUrl)
 
-	if err := MatchingRule(); err != nil {
+	if err := MatchingRule(config.CloneUrl); err != nil {
 		fmt.Println(err)
 	}
 
-	var proxy http.Handler
-	if makeCloneRequest {
-		proxy = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
-	} else {
-		proxy = NewReverseProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure)
-	}
-
-	return proxy
+	return NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 }
 
 func TestCloneProxy(t *testing.T) {
@@ -257,8 +252,8 @@ func TestCloneProxy(t *testing.T) {
 		rewriteRules []string
 		matchingRule string
 	}{
-		{matchingRule: "localhost"},
-		{matchingRule: "!localhost"},
+		{matchingRule: "/"},
+		{matchingRule: "!/"},
 	}
 
 	for _, configuration := range configurations {

@@ -559,9 +559,23 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	//clone_req := new(http.Request)
 	//*clone_req = *req
 	//clone_req.Body = nopCloser{b2}
+
+
+	cloneURL, err := Rewrite(req.URL.RequestURI())
+	if err != nil {
+		fmt.Println(err)
+	}
+	if cloneURL == nil {
+		cloneURL = req.URL
+	}
+
+	if err := MatchingRule(req.URL.RequestURI()); err != nil {
+		fmt.Println(err)
+	}
+
 	clone_req := &http.Request{
 		Method:        req.Method,
-		URL:           req.URL,
+		URL:           cloneURL,
 		Proto:         req.Proto,
 		ProtoMajor:    req.ProtoMajor,
 		ProtoMinor:    req.ProtoMinor,
@@ -603,14 +617,14 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// Clone SERVER ERROR after procesed Target
+	// Clone SERVER ERROR after processed Target
 	// - This means LOST data at clone
 	if makeCloneRequest && clone_statuscode >= 500 {
 		total_unfulfilled.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":            uid,
 			"request_method":  req.Method,
-			"request_path":    req.URL.RequestURI(),
+			"request_path":    cloneURL,
 			"a_response_code": target_statuscode,
 			"b_response_code": clone_statuscode,
 			"duration":        duration,
@@ -760,43 +774,6 @@ func parseUrlWithDefaults(ustr string) *url.URL {
 	return u
 }
 
-func NewReverseProxy(target *url.URL, targetTimeout int, targetRewrite bool, targetInsecure bool) *ReverseClonedProxy {
-	targetQuery := target.RawQuery
-	director := func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
-		if target.Scheme == "https" || targetRewrite {
-			req.Host = target.Host
-		}
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-		}
-		if _, ok := req.Header["User-Agent"]; !ok {
-			// explicitly disable User-Agent so it's not set to default value
-			req.Header.Set("User-Agent", "")
-		}
-	}
-	return &ReverseClonedProxy{
-		Director: director,
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
-				Timeout:   time.Duration(time.Duration(targetTimeout) * time.Second),
-				KeepAlive: 60 * time.Second,
-			}).Dial,
-			MaxIdleConns:        50,
-			MaxIdleConnsPerHost: 50,
-			TLSHandshakeTimeout: 5 * time.Second,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: targetInsecure,
-			},
-		},
-	}
-}
-
 // select a host from the passed `targets`
 func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, target_insecure bool, clone *url.URL, clone_timeout int, clone_rewrite bool, clone_insecure bool) *ReverseClonedProxy {
 	targetQuery := target.RawQuery
@@ -905,29 +882,30 @@ func increaseTCPLimits() {
 	}
 }
 
-func Rewrite() error {
-	rewrite := config.CloneUrl
+func Rewrite(request string) (*url.URL, error) {
+	if config.Rewrite {
+		rewrite := request
 
-	if len(config.RewriteRules) % 2 != 0 || len(config.RewriteRules) < 1 {
-		return fmt.Errorf("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution\n")
-	}
-
-	for i := 0; i < len(config.RewriteRules) - 1; i += 2 {
-		pattern, err := regexp.Compile(config.RewriteRules[i])
-
-		if err != nil {
-			return fmt.Errorf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
+		if len(config.RewriteRules) % 2 != 0 || len(config.RewriteRules) < 1 {
+			return nil, fmt.Errorf("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution\n")
 		}
 
-		rewrite = pattern.ReplaceAllString(rewrite, config.RewriteRules[i+1])
-	}
-	
-	config.CloneUrl = rewrite
+		for i := 0; i < len(config.RewriteRules) - 1; i += 2 {
+			pattern, err := regexp.Compile(config.RewriteRules[i])
 
-	return nil
+			if err != nil {
+				return nil, fmt.Errorf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
+			}
+
+			rewrite = pattern.ReplaceAllString(rewrite, config.RewriteRules[i+1])
+		}
+
+		return url.Parse(rewrite)
+	}
+	return nil, nil
 }
 
-func MatchingRule() error {
+func MatchingRule(requestURI string) error {
 	if config.MatchingRule != "" {
 		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
 		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
@@ -938,7 +916,7 @@ func MatchingRule() error {
 			return fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
 		}
 
-		matches := pattern.MatchString(config.TargetUrl)
+		matches := pattern.MatchString(requestURI)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
 			makeCloneRequest = false
@@ -950,12 +928,6 @@ func MatchingRule() error {
 
 func main() {
 	configuration()
-
-	if config.Rewrite {
-		if err := Rewrite(); err != nil {
-			fmt.Println(err)
-		}
-	}
 
 	// Handle Option Processing
 	flag.Usage = func() {
@@ -1017,16 +989,7 @@ func main() {
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
 	cloneURL := parseUrlWithDefaults(config.CloneUrl)
 
-	if err := MatchingRule(); err != nil {
-		fmt.Println(err)
-	}
-
-	var proxy http.Handler
-	if makeCloneRequest {
-		proxy = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
-	} else {
-		proxy = NewReverseProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure)
-	}
+	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 
 	// Regular publication of status messages
 	c := cron.New()
