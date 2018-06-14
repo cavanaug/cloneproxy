@@ -60,11 +60,12 @@
         # whether to rewrite the clone (B-side) URL
         "Rewrite": false
 
-        #
-        # Pattern-Substitution rules are handled sequentially
+        # Specify the pattern to match in the URI and what should be substituted in its place
+        # Each pattern must have an accompanying substitution and vice versa
+        # Multiple Pattern-Substitution rules are handled sequentially
         # e.g. the original URI is /localhost:8080
         #   :\\d+$              :8080/hi    URI is now localhost:8080/hi
-        #   :\\d+/[a-z]{2}$     :8080/bye   URI is not localhost:8080/bye
+        #   :\\d+/[a-z]{2}$     :8080/bye   URI is now localhost:8080/bye
         "RewriteRules":
         [
             # pattern   substitution
