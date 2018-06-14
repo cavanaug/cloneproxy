@@ -97,13 +97,14 @@ type Config struct {
 }
 
 const exclusionFlag = "!"
-const configFile = "config.hjson"
 
 var (
-	version_str = "20170418.1 (cavanaug)"
+	version_str		  = "20170418.1 (cavanaug)"
 
 	configData map[string]interface{}
 	config Config
+
+	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
 
 	makeCloneRequest = true
 
@@ -115,7 +116,7 @@ var (
 )
 
 
-func configuration() {
+func configuration(configFile string) {
 	raw, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		fmt.Printf("Error, missing %s file", configFile)
@@ -927,8 +928,6 @@ func MatchingRule(requestURI string) error {
 }
 
 func main() {
-	configuration()
-
 	// Handle Option Processing
 	flag.Usage = func() {
 			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
@@ -948,6 +947,7 @@ func main() {
 	}
 	flag.Parse()
 
+	configuration(*configFile)
 
 	if config.Version {
 		fmt.Printf("cloneproxy version: %s\n", version_str)
