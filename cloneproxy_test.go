@@ -4,6 +4,13 @@ import (
 	"testing"
 	"os"
 	"fmt"
+	"net/http"
+	"net/http/httputil"
+	"log"
+	"io/ioutil"
+	"crypto/sha1"
+	"net/http/httptest"
+	"io"
 )
 
 func TestRewrite(t *testing.T) {
@@ -170,6 +177,117 @@ func TestMatchingRule(t *testing.T) {
 		t.Errorf("Expected to receive an error message")
 	} else {
 		fmt.Println("passed")
+	}
+}
+
+
+func serverA(w http.ResponseWriter, req *http.Request) {
+	dump, err := httputil.DumpRequest(req, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Fprintf(w, "%s", dump)
+	body, _ := ioutil.ReadAll(req.Body)
+	s := sha1.Sum(body)
+
+	fmt.Printf("---> %s %s %s %s sha1:%x\n", os.Args[1], req.Method, req.URL.String(), req.UserAgent(), s)
+	fmt.Fprintf(w, "Body(sha1): %x\n", s)
+}
+
+func serverB(w http.ResponseWriter, req *http.Request) {
+	dump, err := httputil.DumpRequest(req, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Fprintf(w, "%s", dump)
+	body, _ := ioutil.ReadAll(req.Body)
+	s := sha1.Sum(body)
+
+	fmt.Printf("---> %s %s %s %s sha1:%x\n", os.Args[1], req.Method, req.URL.String(), req.UserAgent(), s)
+	fmt.Fprintf(w, "Body(sha1): %x\n", s)
+}
+
+func CloneProxy() http.Handler {
+	targetURL := parseUrlWithDefaults(config.TargetUrl)
+	cloneURL := parseUrlWithDefaults(config.CloneUrl)
+
+	if err := MatchingRule(); err != nil {
+		fmt.Println(err)
+	}
+
+	var proxy http.Handler
+	if makeCloneRequest {
+		proxy = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	} else {
+		proxy = NewReverseProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure)
+	}
+
+	return proxy
+}
+
+func TestCloneProxy(t *testing.T) {
+	serverTarget := http.NewServeMux()
+	serverTarget.HandleFunc("/", serverA)
+
+	serverClone := http.NewServeMux()
+	serverClone.HandleFunc("/", serverB)
+
+	go func() {
+		http.ListenAndServe("localhost:8080", serverTarget)
+	}()
+	go func() {
+		http.ListenAndServe("localhost:8081", serverClone)
+	}()
+
+	configurations := []struct{
+		rewriteRules []string
+		matchingRule string
+	}{
+		{matchingRule: "localhost"},
+		{matchingRule: "!localhost"},
+	}
+
+	config.TargetUrl = "http://localhost:8080"
+	config.CloneUrl = "http://localhost:8081"
+	config.MatchingRule = "localhost"
+
+	for _, configuration := range configurations {
+		t.Run("Testing configurations..." , func(tst *testing.T) {
+			config.MatchingRule = configuration.matchingRule
+
+			ts := httptest.NewServer(CloneProxy())
+			defer ts.Close()
+
+			newReq := func(method, url string, body io.Reader) *http.Request {
+				req, err := http.NewRequest(method, url, body)
+				if err != nil {
+					fmt.Println(err)
+				}
+				return req
+			}
+
+			tests := []struct {
+				name string
+				req *http.Request
+			}{
+				{name: "Testing GET with MatchingRule " + configuration.matchingRule, req: newReq("GET", ts.URL + "/", nil)},
+				{name: "Testing POST with MatchingRule " + configuration.matchingRule, req: newReq("POST", ts.URL + "/", nil)},
+			}
+
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					fmt.Println(test.name)
+
+					res, err := http.DefaultClient.Do(test.req)
+					defer res.Body.Close()
+					if err != nil {
+						t.Errorf("Did not expect to receive error: %s", err)
+					}
+				})
+			}
+		})
 	}
 }
 
