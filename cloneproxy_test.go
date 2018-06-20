@@ -131,8 +131,7 @@ func TestMatchingRule(t *testing.T) {
 
 	fmt.Print("Testing inclusion rule... ")
 	config.MatchingRule = "localhost"
-	makeCloneRequest = true
-	err := MatchingRule(config.CloneUrl)
+	makeCloneRequest, err := MatchingRule(config.CloneUrl)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -144,8 +143,7 @@ func TestMatchingRule(t *testing.T) {
 
 	fmt.Print("Testing exlcusion rule... ")
 	config.MatchingRule = "!localhost"
-	makeCloneRequest = true
-	err = MatchingRule(config.CloneUrl)
+	makeCloneRequest, err = MatchingRule(config.CloneUrl)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err != nil {
@@ -157,8 +155,7 @@ func TestMatchingRule(t *testing.T) {
 
 	fmt.Print("Testing no rule... ")
 	config.MatchingRule = ""
-	makeCloneRequest = true
-	err = MatchingRule(config.CloneUrl)
+	makeCloneRequest, err = MatchingRule(config.CloneUrl)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -170,8 +167,7 @@ func TestMatchingRule(t *testing.T) {
 
 	fmt.Print("Testing invalid rule... ")
 	config.MatchingRule = "localhost:[0-9]++"
-	makeCloneRequest = true
-	err = MatchingRule(config.CloneUrl)
+	makeCloneRequest, err = MatchingRule(config.CloneUrl)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err == nil {
@@ -212,10 +208,6 @@ func serverB(w http.ResponseWriter, req *http.Request) {
 func CloneProxy() http.Handler {
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
 	cloneURL := parseUrlWithDefaults(config.CloneUrl)
-
-	if err := MatchingRule(config.CloneUrl); err != nil {
-		fmt.Println(err)
-	}
 
 	return NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 }

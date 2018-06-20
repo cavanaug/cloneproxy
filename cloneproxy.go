@@ -106,8 +106,6 @@ var (
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
 
-	makeCloneRequest = true
-
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
 	total_unfulfilled = expvar.NewInt("total_unfulfilled")
@@ -570,7 +568,8 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		cloneURL = req.URL
 	}
 
-	if err := MatchingRule(req.URL.RequestURI()); err != nil {
+	makeCloneRequest, err := MatchingRule(req.URL.RequestURI())
+	if err != nil {
 		fmt.Println(err)
 	}
 
@@ -662,6 +661,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"response_code":         target_statuscode,
 			"response_length":       target_contentlength,
 			"duration":              duration,
+			"clone_request":		 makeCloneRequest,
 		}).Info(infoSuccess)
 	}
 
@@ -906,25 +906,24 @@ func Rewrite(request string) (*url.URL, error) {
 	return nil, nil
 }
 
-func MatchingRule(requestURI string) error {
+func MatchingRule(requestURI string) (bool, error) {
 	if config.MatchingRule != "" {
 		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
-		config.MatchingRule = strings.TrimPrefix(config.MatchingRule, exclusionFlag)
-		pattern, err := regexp.Compile(config.MatchingRule)
+		matchingRule := strings.TrimPrefix(config.MatchingRule, exclusionFlag)
+		pattern, err := regexp.Compile(matchingRule)
 
 		if err != nil {
-			makeCloneRequest = false
-			return fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
+			return false, fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
 		}
 
 		matches := pattern.MatchString(requestURI)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
-			makeCloneRequest = false
+			return false, nil
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func main() {
