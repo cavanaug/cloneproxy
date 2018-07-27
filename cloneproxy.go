@@ -230,6 +230,12 @@ var hopHeaders = []string{
 // Serve the http for the Target
 // - This is unmodified from ReverseProxy.ServeHTTP except for logging
 func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) (int, int64) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered: %s\n", r)
+		}
+	}()
+
 	t := time.Now()
 	transport := p.Transport
 	if transport == nil {
@@ -391,6 +397,12 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
 func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (int, int64) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered: %s\n", r)
+		}
+	}()
+
 	t := time.Now()
 	transport := p.TransportClone
 	if transport == nil {
@@ -529,8 +541,12 @@ func (nopCloser) Close() error { return nil }
 // - Call each of ServeTargetHTTP & ServeCloneHTTP asynchronously
 // - Nothing else...
 func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered: %s\n", r)
+		}
+	}()
 
-	//
 	// Normal mechanism for expvar support doesnt work with ReverseProxy
 	if req.URL.Path == "/debug/vars" && req.Method == "GET" {
 		expvar.Handler().ServeHTTP(rw, req)

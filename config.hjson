@@ -47,7 +47,7 @@
         # where clone (B-Side) traffic goes
         # if empty, you can set ClonePercent to 0.0 or MatchingRule to !
         # if you don't want the log to output "Proxy clone Request Unfulfilled"
-        "CloneUrl": ""
+        "CloneUrl": "http://localhost:8081"
 
         # timeout in seconds for clone (B-Side) traffic
         "CloneTimeout": 5
