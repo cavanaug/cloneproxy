@@ -74,6 +74,7 @@ type Config struct {
 	ExpandMaxTcp	uint64
 	JsonLogging		bool
 	LogLevel		int
+	LogFilePath		string
 
 	ListenPort		string
 	ListenTimeout	int
@@ -636,10 +637,10 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// - This means disagreement between Clone & Target
 	// - This could be completely ok dependent on how responses are handled
 	infoSuccess := "Proxy Clone Request Skipped"
-	if makeCloneRequest {
+	if makeCloneRequest && clone_statuscode > 0 {
 		infoSuccess = "CloneProxy Responses Match"
 	}
-	if makeCloneRequest && ((clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength)) {
+	if (makeCloneRequest && clone_statuscode > 0) && ((clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength)) {
 		total_mismatches.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":              uid,
@@ -761,6 +762,9 @@ func (m *maxLatencyWriter) flushLoop() {
 func (m *maxLatencyWriter) stop() { m.done <- true }
 
 func parseUrlWithDefaults(ustr string) *url.URL {
+	if ustr == "" {
+		return new(url.URL)
+	}
 	u, err := url.ParseRequestURI(ustr)
 	if err != nil {
 		fmt.Printf("Error: Unable to parse url %s  (Ex.  http://localhost:9001)", ustr)
@@ -954,6 +958,16 @@ func main() {
 	}
 
 	log.SetOutput(os.Stdout)
+	if config.LogFilePath != "" {
+		file, err := os.OpenFile(config.LogFilePath, os.O_CREATE|os.O_WRONLY, 0666)
+		if err == nil {
+			multiWriter := io.MultiWriter(os.Stdout, file)
+			log.SetOutput(multiWriter)
+			defer file.Close()
+		} else {
+			fmt.Print("Failed to log to file, using default stderr")
+		}
+	}
 	// Log as JSON instead of the default ASCII formatter
 	if config.JsonLogging {
 		log.SetFormatter(&log.JSONFormatter{})
@@ -975,7 +989,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if !strings.HasPrefix(config.CloneUrl, "http") {
+	if config.CloneUrl != "" && !strings.HasPrefix(config.CloneUrl, "http") {
 		fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", config.CloneUrl)
 		flag.Usage()
 		os.Exit(1)

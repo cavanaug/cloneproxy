@@ -11,6 +11,9 @@
         # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
         "LogLevel": 1
 
+        # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
+        "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
+
 
 
         # server port to listen for requests
@@ -42,7 +45,9 @@
 
 
         # where clone (B-Side) traffic goes
-        "CloneUrl": "http://localhost:8081"
+        # if empty, you can set ClonePercent to 0.0 or MatchingRule to !
+        # if you don't want the log to output "Proxy clone Request Unfulfilled"
+        "CloneUrl": ""
 
         # timeout in seconds for clone (B-Side) traffic
         "CloneTimeout": 5
@@ -75,11 +80,11 @@
 
 
         # How to:
-        #   - Always send to clone (B-side)?
+        #   - Always send to clone (B-side)
         #       - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
-        #   - Send to clone (B-side) only if the target URL matches a pattern?
+        #   - Send to clone (B-side) only if the target URL matches a pattern
         #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
-        #   - Send to clone (B-side) only if the target URL does not match a pattern?
+        #   - Send to clone (B-side) only if the target URL does not match a pattern
         #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
         "MatchingRule": "/"
 }
