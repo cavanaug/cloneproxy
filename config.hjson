@@ -87,4 +87,12 @@
         #   - Send to clone (B-side) only if the target URL does not match a pattern
         #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
         "MatchingRule": "/"
+
+        # Maps the request URI (path) to the desired clone (B-side)
+        "Paths":
+        {
+            # path      # clone (B-side) to send to
+            "/":        "http://localhost:8081"
+            "/test":    "http://localhost:8082"
+        }
 }

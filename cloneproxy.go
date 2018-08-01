@@ -95,6 +95,7 @@ type Config struct {
 	Rewrite 		bool
 	RewriteRules	[]string
 	MatchingRule	string
+	Paths			map[string]string
 }
 
 const exclusionFlag = "!"
@@ -104,6 +105,7 @@ var (
 
 	configData map[string]interface{}
 	config Config
+	proxies = make(map[string]*ReverseClonedProxy)
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
 
@@ -141,6 +143,8 @@ func configuration(configFile string) {
 // onExitFlushLoop is a callback set by tests to detect the state of the
 // flushLoop() goroutine.
 var onExitFlushLoop func()
+
+type baseHandle struct {}
 
 // ReverseClonedProxy is an HTTP Handler that takes an incoming request and
 // sends it to another server, proxying the response back to the
@@ -224,6 +228,18 @@ var hopHeaders = []string{
 	"Trailer", // not Trailers per URL above; http://www.rfc-editor.org/errata_search.php?eid=4522
 	"Transfer-Encoding",
 	"Upgrade",
+}
+
+// Routes requests to appropriate ReverseCloneProxy handler
+func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestURI := r.RequestURI
+
+	if clone, ok := config.Paths[requestURI]; ok {
+		proxy := proxies[clone]
+		proxy.ServeHTTP(w, r)
+		return
+	}
+	log.Println("Unable to process request")
 }
 
 //
@@ -552,6 +568,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		expvar.Handler().ServeHTTP(rw, req)
 		return
 	}
+
 
 	// Initialize tracking vars
 	uid, _ := uuid.NewV4()
@@ -926,7 +943,7 @@ func Rewrite(request string) (*url.URL, error) {
 	return nil, nil
 }
 
-func MatchingRule(requestURI string) (bool, error) {
+func MatchingRule(targetURL string) (bool, error) {
 	if config.MatchingRule != "" {
 		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
 		matchingRule := strings.TrimPrefix(config.MatchingRule, exclusionFlag)
@@ -936,7 +953,7 @@ func MatchingRule(requestURI string) (bool, error) {
 			return false, fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
 		}
 
-		matches := pattern.MatchString(requestURI)
+		matches := pattern.MatchString(targetURL)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
 			return false, nil
@@ -1016,9 +1033,14 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	targetURL := parseUrlWithDefaults(config.TargetUrl)
-	cloneURL := parseUrlWithDefaults(config.CloneUrl)
+	cloneURL := make([]*url.URL, 0, len(config.Paths))
+	for _, v := range config.Paths {
+		cloneURL = append(cloneURL, parseUrlWithDefaults(v))
+	}
 
-	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	for _, clone := range cloneURL {
+		proxies[clone.String()] = NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, clone, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	}
 
 	// Regular publication of status messages
 	c := cron.New()
@@ -1031,7 +1053,7 @@ func main() {
 		Addr:         config.ListenPort,
 		WriteTimeout: time.Duration(time.Duration(config.ListenTimeout) * time.Second),
 		ReadTimeout:  time.Duration(time.Duration(config.ListenTimeout) * time.Second),
-		Handler:      proxy,
+		Handler:      &baseHandle{},
 		// TODO: Probably should add some denial of service max sizes etc...
 	}
 	if len(config.TlsKey) > 0 {
