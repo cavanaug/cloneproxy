@@ -62,23 +62,17 @@
         "ClonePercent": 100.0
 
 
-        # whether to rewrite the clone (B-side) URL
-        "Rewrite": false
-
+        # RewriteRules
+        #
         # Specify the pattern to match in the URI and what should be substituted in its place
         # Each pattern must have an accompanying substitution and vice versa
         # Multiple Pattern-Substitution rules are handled sequentially
-        # e.g. the original URI is /localhost:8080
-        #   :\\d+$              :8080/hi    URI is now localhost:8080/hi
-        #   :\\d+/[a-z]{2}$     :8080/bye   URI is now localhost:8080/bye
-        "RewriteRules":
-        [
-            # pattern   substitution
-            "\/"        "localhost:8081"
-            ":\\d+$"    ":8080/"
-        ]
+        # e.g. the original URI is http://localhost:8080/foo
+        #   \\w{3}$            hi         URI is now http://localhost:8080/hi
+        #   hi$                bye        URI is now http://localhost:8080/bye
 
-
+        # MatchingRule
+        #
         # How to:
         #   - Always send to clone (B-side)
         #       - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
@@ -86,13 +80,49 @@
         #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
         #   - Send to clone (B-side) only if the target URL does not match a pattern
         #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
-        "MatchingRule": "/"
 
         # Maps the request URI (path) to the desired clone (B-side)
         "Paths":
         {
-            # path      # clone (B-side) to send to
-            "/":        "http://localhost:8081"
-            "/test":    "http://localhost:8082"
+            # path      # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
+            "/":        {
+                            "target": "http://localhost:8080"
+                            "clone":  "http://localhost:8081"
+                            # whether to rewrite the clone (B-side) URL
+                            "rewrite": false
+                            "rewriteRules":
+                            [
+                                # pattern   substitution
+                                "\/"        "/test"
+                            ]
+                            "matchingRule": "/"
+                        }
+
+            "/test":    {
+                            "target": "http://localhost:8080"
+                            "clone":  "http://localhost:8082"
+                            # whether to rewrite the clone (B-side) URL
+                            "rewrite": true
+                            "rewriteRules":
+                            [
+                                # pattern   substitution
+                                "\\w{4}"    "bar"
+                            ]
+                            "matchingRule": "/"
+                        }
+
+            "/bar/":    {
+                            "target": "http://localhost:8080"
+                            "clone":  ""
+                            # whether to rewrite the clone (B-side) URL
+                            "rewrite": true
+                            "rewriteRules":
+                            [
+                                # pattern   substitution
+                                "bar"       "test"
+                                "test"      "bar"
+                            ]
+                            "matchingRule": "!"
+                        }
         }
 }
