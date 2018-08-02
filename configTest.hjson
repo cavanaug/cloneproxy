@@ -1,0 +1,105 @@
+{
+    # show version number
+    "Version": false
+
+    # cloneproxy maximum tcp sockets for use
+    "ExpandMaxTcp": 4096
+
+    # write the logs in json for easier processing
+    "JsonLogging": false
+
+    # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
+    "LogLevel": 1
+
+    # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
+    "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
+
+    # server port to listen for requests
+    "ListenPort": ":8888"
+
+    # server timeout for clients communicating to server
+    "ListenTimeout": 900
+
+    # path to the TLS certificate file
+    "TlsCert": ""
+
+    # path to the TLS private key file
+    "TlsKey": ""
+
+    # timeout in seconds for target (A-Side) traffic
+    "TargetTimeout": 5
+
+    # rewrite the host header when proxying target (A-Side) traffic
+    "TargetRewrite": false
+
+    # insecure SSL validation for target (A-Side) traffic
+    "TargetInsecure": false
+
+    # timeout in seconds for clone (B-Side) traffic
+    "CloneTimeout": 5
+
+    # rewrite the host header when proxing clone (B-Side) traffic
+    "CloneRewrite": false
+
+    # insecure SSL validation for clone (B-Side) traffic
+    "CloneInsecure": false
+
+    # float64 percentage of traffic to send to clone (B Side)
+    "ClonePercent": 100.0
+
+    "Paths":
+    {
+        # path                                                      # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
+        "/project/5AF308SDF093JF02/queues/wrong_queue_name":        {
+                                                                        "target": "http://localhost:8080"
+                                                                        "clone":  "/project/5AF308SDF093JF02/queues/wrong_queue_name"
+                                                                        # whether to rewrite the clone (B-side) URL
+                                                                        "rewrite": true
+                                                                        "rewriteRules":
+                                                                        [
+                                                                            # pattern               substitution
+                                                                            "wrong_queue_name"      "right_queue_name"
+                                                                        ]
+                                                                        "matchingRule": "/"
+                                                                    }
+
+        "/localhost:8080":                                          {
+                                                                        "target": "http://localhost:8080"
+                                                                        "clone":  "/project/5AF308SDF093JF02/queues/wrong_queue_name"
+                                                                        # whether to rewrite the clone (B-side) URL
+                                                                        "rewrite": true
+                                                                        "rewriteRules":
+                                                                        [
+                                                                            # pattern               substitution
+                                                                            "wrong_queue_name"      "right_queue_name"
+                                                                        ]
+                                                                        "matchingRule": "/"
+                                                                    }
+
+        "http://localhost:8081":                                    {
+                                                                        "target": "http://localhost:8080"
+                                                                        "clone":  "http://localhost:8081"
+                                                                        # whether to rewrite the clone (B-side) URL
+                                                                        "rewrite": true
+                                                                        "rewriteRules":
+                                                                        [
+                                                                            # pattern               substitution
+                                                                            "wrong_queue_name"      "right_queue_name"
+                                                                        ]
+                                                                        "matchingRule": "/"
+                                                                    }
+
+        "/test":                                                     {
+                                                                        "target": "http://localhost:8080"
+                                                                        "clone":  "http://localhost:8081"
+                                                                        # whether to rewrite the clone (B-side) URL
+                                                                        "rewrite": false
+                                                                        "rewriteRules":
+                                                                        [
+                                                                            # pattern               substitution
+                                                                            "wrong_queue_name"      "right_queue_name"
+                                                                        ]
+                                                                        "matchingRule": "/"
+                                                                    }
+    }
+}

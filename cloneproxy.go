@@ -260,7 +260,7 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 		return
 	}
-	log.Println("Unable to process request")
+	log.Println("Unable to process request for", requestURI)
 }
 
 //
@@ -626,7 +626,6 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	//clone_req := new(http.Request)
 	//*clone_req = *req
 	//clone_req.Body = nopCloser{b2}
-
 
 	cloneURL, err := Rewrite(req.URL.RequestURI())
 	if err != nil {
