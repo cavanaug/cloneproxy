@@ -14,8 +14,6 @@
         # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
         "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
 
-
-
         # server port to listen for requests
         "ListenPort": ":8888"
 
@@ -28,11 +26,6 @@
         # path to the TLS private key file
         "TlsKey": ""
 
-
-
-        # where target (A-Side) traffic goes
-        "TargetUrl": "http://localhost:8080"
-
         # timeout in seconds for target (A-Side) traffic
         "TargetTimeout": 5
 
@@ -41,13 +34,6 @@
 
         # insecure SSL validation for target (A-Side) traffic
         "TargetInsecure": false
-
-
-
-        # where clone (B-Side) traffic goes
-        # if empty, you can set ClonePercent to 0.0 or MatchingRule to !
-        # if you don't want the log to output "Proxy clone Request Unfulfilled"
-        "CloneUrl": "http://localhost:8081"
 
         # timeout in seconds for clone (B-Side) traffic
         "CloneTimeout": 5
@@ -62,26 +48,29 @@
         "ClonePercent": 100.0
 
 
-        # RewriteRules
-        #
-        # Specify the pattern to match in the URI and what should be substituted in its place
-        # Each pattern must have an accompanying substitution and vice versa
-        # Multiple Pattern-Substitution rules are handled sequentially
-        # e.g. the original URI is http://localhost:8080/foo
-        #   \\w{3}$            hi         URI is now http://localhost:8080/hi
-        #   hi$                bye        URI is now http://localhost:8080/bye
-
-        # MatchingRule
-        #
-        # How to:
-        #   - Always send to clone (B-side)
-        #       - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
-        #   - Send to clone (B-side) only if the target URL matches a pattern
-        #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
-        #   - Send to clone (B-side) only if the target URL does not match a pattern
-        #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
 
         # Maps the request URI (path) to the desired clone (B-side)
+        # Additional info:
+        #   - clone (B-Side) traffic
+        #       - if empty, you can set ClonePercent to 0.0 or MatchingRule to !
+        #       - if you don't want the log to output "Proxy clone Request Unfulfilled"
+        #
+        #   - RewriteRules
+        #       Specify the pattern to match in the URI and what should be substituted in its place
+        #       Each pattern must have an accompanying substitution and vice versa
+        #       Multiple Pattern-Substitution rules are handled sequentially
+        #       e.g. the original URI is http://localhost:8080/foo
+        #           \\w{3}$            hi         URI is now http://localhost:8080/hi
+        #           hi$                bye        URI is now http://localhost:8080/bye
+        #
+        #   - MatchingRule
+        #       How to:
+        #           - Always send to clone (B-side)
+        #               - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
+        #           - Send to clone (B-side) only if the target URL matches a pattern
+        #               - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
+        #           - Send to clone (B-side) only if the target URL does not match a pattern
+        #               - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
         "Paths":
         {
             # path      # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
