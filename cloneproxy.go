@@ -346,6 +346,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
+	outreq.Header.Set("X-Cloneproxy-TargetServed", req.Host + req.URL.Path)
 
 	log.WithFields(log.Fields{
 		"uuid":           uid,
@@ -602,6 +603,15 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
+	targetServed := req.Header.Get("X-Cloneproxy-TargetServed")
+	if targetServed != "" {
+		log.WithFields(log.Fields{
+			"target (a-side)": targetServed,
+		}).Info("Request already served")
+		fmt.Println("Request already served, target (a-side):", targetServed)
+		return
+	}
+
 
 	// Initialize tracking vars
 	uid, _ := uuid.NewV4()
@@ -707,7 +717,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		infoSuccess = "CloneProxy Responses Match"
 	}
 
-	if (makeCloneRequest && clone_statuscode > 0) && ((clone_statuscode != target_statuscode) || (clone_sha1 != target_sha1)) {
+	if (makeCloneRequest && clone_statuscode > 0) && ((clone_statuscode != target_statuscode) || (clone_sha1 != target_sha1) || (clone_contentlength != target_contentlength)) {
 		total_mismatches.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":              uid,
