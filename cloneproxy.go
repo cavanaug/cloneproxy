@@ -98,10 +98,13 @@ type Config struct {
 const exclusionFlag = "!"
 
 var (
-	version_str		  = "20170418.1 (cavanaug)"
+	VERSION				string
+	minversion			string
+	version_str		  = "20180808.0 (cavanaug)"
 
 	configData map[string]interface{}
 	config Config
+	cloneproxyHeader  = "X-Cloneproxy-TargetServed"
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
 
@@ -226,17 +229,22 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-// Routes requests to appropriate ReverseCloneProxy handler
-func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	requestURI := r.RequestURI
-
+func getConfigPath(requestURI string) (string, error) {
 	var pathKey string
 	for path := range config.Paths {
 		if strings.Contains(requestURI, path) {
 			pathKey = path
-			break
+			return pathKey, nil
 		}
 	}
+	return "", fmt.Errorf("Error: No path contains %s in the config file\n\n", requestURI)
+}
+
+// Routes requests to appropriate ReverseCloneProxy handler
+func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestURI := r.RequestURI
+
+	pathKey, _ := getConfigPath(requestURI)
 
 	if targetClone, ok := config.Paths[pathKey]; ok {
 		configTargetUrl := targetClone["target"].(string)
@@ -346,7 +354,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
-	outreq.Header.Set("X-Cloneproxy-TargetServed", req.Host + req.URL.Path)
+	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
 
 	log.WithFields(log.Fields{
 		"uuid":           uid,
@@ -603,7 +611,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	targetServed := req.Header.Get("X-Cloneproxy-TargetServed")
+	targetServed := req.Header.Get(cloneproxyHeader)
 	if targetServed != "" {
 		log.WithFields(log.Fields{
 			"target (a-side)": targetServed,
@@ -968,11 +976,17 @@ func increaseTCPLimits() {
 }
 
 func Rewrite(request string) (*url.URL, error) {
-	configRewrite := config.Paths[request]["rewrite"].(bool)
+	pathKey, err := getConfigPath(request)
+
+	if err != nil {
+		return nil, err
+	}
+
+	configRewrite := config.Paths[pathKey]["rewrite"].(bool)
 	if configRewrite {
 		rewrite := request
 
-		rewriteRules := config.Paths[request]["rewriteRules"].([]interface{})
+		rewriteRules := config.Paths[pathKey]["rewriteRules"].([]interface{})
 		configRewriteRules := make([]string, 0, len(rewriteRules))
 		for _, rule := range rewriteRules {
 			configRewriteRules = append(configRewriteRules, rule.(string))
@@ -997,8 +1011,14 @@ func Rewrite(request string) (*url.URL, error) {
 }
 
 func MatchingRule(request string) (bool, error) {
-	configMatchingRule := config.Paths[request]["matchingRule"].(string)
-	configCloneUrl := config.Paths[request]["clone"].(string)
+	pathKey, err := getConfigPath(request)
+
+	if err != nil {
+		return false, err
+	}
+
+	configMatchingRule := config.Paths[pathKey]["matchingRule"].(string)
+	configCloneUrl := config.Paths[pathKey]["clone"].(string)
 	if configMatchingRule != "" {
 		exclude := strings.Contains(configMatchingRule, exclusionFlag)
 		matchingRule := strings.TrimPrefix(configMatchingRule, exclusionFlag)
@@ -1019,6 +1039,8 @@ func MatchingRule(request string) (bool, error) {
 }
 
 func main() {
+	fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
+
 	// Handle Option Processing
 	flag.Usage = func() {
 			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)

@@ -86,32 +86,5 @@
                             ]
                             "matchingRule": "/"
                         }
-
-            "/test":    {
-                            "target": "http://localhost:8080"
-                            "clone":  "http://localhost:8082"
-                            # whether to rewrite the clone (B-side) URL
-                            "rewrite": true
-                            "rewriteRules":
-                            [
-                                # pattern   substitution
-                                "\\w{4}"    "bar"
-                            ]
-                            "matchingRule": "/"
-                        }
-
-            "/bar/":    {
-                            "target": "http://localhost:8080"
-                            "clone":  ""
-                            # whether to rewrite the clone (B-side) URL
-                            "rewrite": true
-                            "rewriteRules":
-                            [
-                                # pattern   substitution
-                                "bar"       "test"
-                                "test"      "bar"
-                            ]
-                            "matchingRule": "!"
-                        }
         }
 }
