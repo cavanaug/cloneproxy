@@ -68,7 +68,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"encoding/base64"
+	"encoding/hex"
 )
 
 type Config struct {
@@ -104,9 +104,11 @@ var (
 
 	configData map[string]interface{}
 	config Config
-	cloneproxyHeader  = "X-Cloneproxy-TargetServed"
+	cloneproxyHeader  = "X-Cloneproxy-Request"
+	sideServedheader  = "X-Cloneproxy-Served"
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
+	version			  = flag.Bool("version", false, VERSION)
 
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
@@ -227,6 +229,22 @@ var hopHeaders = []string{
 	"Trailer", // not Trailers per URL above; http://www.rfc-editor.org/errata_search.php?eid=4522
 	"Transfer-Encoding",
 	"Upgrade",
+}
+
+func removeHeaders(body string, headers []string) (string) {
+	bodyString := body
+	for _, header := range headers {
+		bodyString = strings.Replace(bodyString, header, "", -1)
+	}
+	return bodyString
+}
+
+func sha1Body(body []byte, headers []string) (string) {
+	stringBody := string(body)
+	//stringBody = removeHeaders(stringBody, headers)
+	hasher := sha1.New()
+	hasher.Write([]byte(stringBody))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func getConfigPath(requestURI string) (string, error) {
@@ -355,6 +373,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+	outreq.Header.Set(sideServedheader, "target (a-side)")
 
 	log.WithFields(log.Fields{
 		"uuid":           uid,
@@ -416,8 +435,14 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	body, _ := ioutil.ReadAll(res.Body)
-	res_length := p.copyResponse(rw, res.Body)
+	//res_length := p.copyResponse(rw, res.Body)
+	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
+
+	headersToRemove := []string{
+		// xff is present for target but not in clone and must be removed to do a proper comparison
+		"X-Forwarded-For: " + res.Request.Header["X-Forwarded-For"][0] + "\r\n",
+	}
 	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
@@ -426,6 +451,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
+			"response_body":   string(body),
 		}).Debug("Proxy Response (loglevel)")
 	} else {
 		log.WithFields(log.Fields{
@@ -437,12 +463,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}).Debug("Proxy Response")
 	}
 
-	// xff is present for target but not in clone and must be removed to do a proper comparison
-	stringBody := string(body)
-	xff := "X-Forwarded-For: " + res.Request.Header["X-Forwarded-For"][0] + "\r\n"
-	stringBody = strings.Replace(stringBody, xff, "", -1)
-	hasher := sha1.New()
-	sha := base64.URLEncoding.EncodeToString(hasher.Sum([]byte(stringBody)))
+	sha := sha1Body(body, headersToRemove)
 
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
@@ -522,6 +543,8 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
+	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+	outreq.Header.Set(sideServedheader, "clone (b-side)")
 
 	log.WithFields(log.Fields{
 		"uuid":                  uid,
@@ -548,6 +571,9 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
+
+	var headersToRemove []string
+
 	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
@@ -556,7 +582,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
-			"response_body":   body, //fmt.Sprintf("%s", body),
+			"response_body":   string(body),
 		}).Debug("Proxy Response (Details)")
 	} else {
 		log.WithFields(log.Fields{
@@ -581,8 +607,8 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
 	}
-	hasher := sha1.New()
-	sha := base64.URLEncoding.EncodeToString(hasher.Sum(body))
+
+	sha := sha1Body(body, headersToRemove)
 
 	return res.StatusCode, res_length, sha
 }
@@ -614,9 +640,9 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	targetServed := req.Header.Get(cloneproxyHeader)
 	if targetServed != "" {
 		log.WithFields(log.Fields{
-			"target (a-side)": targetServed,
+			"request URI": targetServed,
 		}).Info("Request already served")
-		fmt.Println("Request already served, target (a-side):", targetServed)
+		fmt.Println("Request already served, request URI:", targetServed)
 		return
 	}
 
@@ -1039,11 +1065,9 @@ func MatchingRule(request string) (bool, error) {
 }
 
 func main() {
-	fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
-
 	// Handle Option Processing
 	flag.Usage = func() {
-			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
+			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", VERSION)
 			   fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
 			   flag.PrintDefaults()
 			   fmt.Fprintf(os.Stderr, `
@@ -1060,6 +1084,12 @@ func main() {
 	}
 	flag.Parse()
 
+	if *version {
+		fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
+		return
+	}
+
+	fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
 	configuration(*configFile)
 
 	if config.Version {
