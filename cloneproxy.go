@@ -435,7 +435,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	body, _ := ioutil.ReadAll(res.Body)
-	//res_length := p.copyResponse(rw, res.Body)
+	p.copyResponse(rw, res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
 
@@ -464,6 +464,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	sha := sha1Body(body, headersToRemove)
+	fmt.Fprintf(rw, string(body))
 
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
