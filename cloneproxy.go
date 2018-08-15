@@ -46,6 +46,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/sha1"
 	"expvar"
 	"flag"
 	"fmt"
@@ -67,6 +68,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"encoding/hex"
 )
 
 type Config struct {
@@ -81,31 +83,32 @@ type Config struct {
 	TlsCert			string
 	TlsKey			string
 
-	TargetUrl		string
 	TargetTimeout	int
 	TargetRewrite	bool
 	TargetInsecure	bool
 
-	CloneUrl		string
 	CloneTimeout	int
 	CloneRewrite	bool
 	CloneInsecure	bool
 	ClonePercent	float64
 
-	Rewrite 		bool
-	RewriteRules	[]string
-	MatchingRule	string
+	Paths			map[string]map[string]interface{}
 }
 
 const exclusionFlag = "!"
 
 var (
-	version_str		  = "20170418.1 (cavanaug)"
+	VERSION				string
+	minversion			string
+	version_str		  = "20180808.0 (cavanaug)"
 
 	configData map[string]interface{}
 	config Config
+	cloneproxyHeader  = "X-Cloneproxy-Request"
+	sideServedheader  = "X-Cloneproxy-Served"
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
+	version			  = flag.Bool("version", false, VERSION)
 
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
@@ -141,6 +144,8 @@ func configuration(configFile string) {
 // onExitFlushLoop is a callback set by tests to detect the state of the
 // flushLoop() goroutine.
 var onExitFlushLoop func()
+
+type baseHandle struct {}
 
 // ReverseClonedProxy is an HTTP Handler that takes an incoming request and
 // sends it to another server, proxying the response back to the
@@ -226,10 +231,68 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
+func removeHeaders(body string, headers []string) (string) {
+	bodyString := body
+	for _, header := range headers {
+		bodyString = strings.Replace(bodyString, header, "", -1)
+	}
+	return bodyString
+}
+
+func sha1Body(body []byte, headers []string) (string) {
+	stringBody := string(body)
+	//stringBody = removeHeaders(stringBody, headers)
+	hasher := sha1.New()
+	hasher.Write([]byte(stringBody))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func getConfigPath(requestURI string) (string, error) {
+	var pathKey string
+	for path := range config.Paths {
+		if strings.Contains(requestURI, path) {
+			pathKey = path
+			return pathKey, nil
+		}
+	}
+	return "", fmt.Errorf("Error: No path contains %s in the config file\n\n", requestURI)
+}
+
+// Routes requests to appropriate ReverseCloneProxy handler
+func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestURI := r.RequestURI
+
+	pathKey, _ := getConfigPath(requestURI)
+
+	if targetClone, ok := config.Paths[pathKey]; ok {
+		configTargetUrl := targetClone["target"].(string)
+		configCloneUrl := targetClone["clone"].(string)
+
+		targetURL := parseUrlWithDefaults(configTargetUrl)
+		cloneURL := parseUrlWithDefaults(configCloneUrl)
+
+		if !strings.HasPrefix(configTargetUrl, "http") {
+			fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", configTargetUrl)
+			flag.Usage()
+			os.Exit(1)
+		}
+		if configCloneUrl != "" && !strings.HasPrefix(configCloneUrl, "http") {
+			fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", configCloneUrl)
+			flag.Usage()
+			os.Exit(1)
+		}
+
+		proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+		proxy.ServeHTTP(w, r)
+		return
+	}
+	log.Println("Unable to process request for", requestURI)
+}
+
 //
 // Serve the http for the Target
 // - This is unmodified from ReverseProxy.ServeHTTP except for logging
-func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) (int, int64) {
+func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.Request, uid uuid.UUID) (int, int64, string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("Recovered: %s\n", r)
@@ -309,6 +372,8 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
+	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+	outreq.Header.Set(sideServedheader, "target (a-side)")
 
 	log.WithFields(log.Fields{
 		"uuid":           uid,
@@ -330,7 +395,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"error":         err,
 		}).Error("Proxy Response")
 		rw.WriteHeader(http.StatusBadGateway)
-		return int(http.StatusBadGateway), int64(0)
+		return int(http.StatusBadGateway), int64(0), ""
 	}
 
 	// Remove hop-by-hop headers listed in the
@@ -368,8 +433,16 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			fl.Flush()
 		}
 	}
-	res_length := p.copyResponse(rw, res.Body)
+
+	body, _ := ioutil.ReadAll(res.Body)
+	p.copyResponse(rw, res.Body)
+	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
+
+	headersToRemove := []string{
+		// xff is present for target but not in clone and must be removed to do a proper comparison
+		"X-Forwarded-For: " + res.Request.Header["X-Forwarded-For"][0] + "\r\n",
+	}
 	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
@@ -378,6 +451,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
+			"response_body":   string(body),
 		}).Debug("Proxy Response (loglevel)")
 	} else {
 		log.WithFields(log.Fields{
@@ -388,15 +462,19 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"response_length": res_length,
 		}).Debug("Proxy Response")
 	}
+
+	sha := sha1Body(body, headersToRemove)
+	fmt.Fprintf(rw, string(body))
+
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
-	return res.StatusCode, res_length
+	return res.StatusCode, res_length, sha
 }
 
 //
 // Serve the http for the Clone
 // - Handles special casing for the clone (ie. No response back to client)
-func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (int, int64) {
+func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (int, int64, string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("Recovered: %s\n", r)
@@ -466,6 +544,8 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
+	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+	outreq.Header.Set(sideServedheader, "clone (b-side)")
 
 	log.WithFields(log.Fields{
 		"uuid":                  uid,
@@ -485,13 +565,16 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 			"response_code": http.StatusBadGateway,
 			"error":         err,
 		}).Error("Proxy Response")
-		return http.StatusBadGateway, int64(0)
+		return http.StatusBadGateway, int64(0), ""
 	}
 	defer res.Body.Close() // ensure we dont bleed connections
 
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
 	res_time := time.Since(t).Nanoseconds() / 1000000
+
+	var headersToRemove []string
+
 	if config.LogLevel > 4 {
 		log.WithFields(log.Fields{
 			"uuid":            uid,
@@ -500,7 +583,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 			"response_time":   res_time,
 			"response_length": res_length,
 			"response_header": res.Header,
-			"response_body":   body, //fmt.Sprintf("%s", body),
+			"response_body":   string(body),
 		}).Debug("Proxy Response (Details)")
 	} else {
 		log.WithFields(log.Fields{
@@ -526,7 +609,9 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		res.Header.Del(h)
 	}
 
-	return res.StatusCode, res_length
+	sha := sha1Body(body, headersToRemove)
+
+	return res.StatusCode, res_length, sha
 }
 
 type nopCloser struct {
@@ -553,6 +638,16 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
+	targetServed := req.Header.Get(cloneproxyHeader)
+	if targetServed != "" {
+		log.WithFields(log.Fields{
+			"request URI": targetServed,
+		}).Info("Request already served")
+		fmt.Println("Request already served, request URI:", targetServed)
+		return
+	}
+
+
 	// Initialize tracking vars
 	uid, _ := uuid.NewV4()
 	t := time.Now()
@@ -571,11 +666,11 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// Clone is a deep copy of original req
 	clone_statuscode := 0
 	clone_contentlength := int64(0)
+	clone_sha1 := ""
 	clone_random := rand.New(rand.NewSource(time.Now().UnixNano())).Float64() * 100
 	//clone_req := new(http.Request)
 	//*clone_req = *req
 	//clone_req.Body = nopCloser{b2}
-
 
 	cloneURL, err := Rewrite(req.URL.RequestURI())
 	if err != nil {
@@ -607,7 +702,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	//defer clone_req.Body.Close()
 
 	// Process Target
-	target_statuscode, target_contentlength := p.ServeTargetHTTP(rw, target_req, uid)
+	target_statuscode, target_contentlength, target_sha1 := p.ServeTargetHTTP(rw, target_req, uid)
 	req.Body.Close()
 
 	// Process Clone
@@ -617,7 +712,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	switch {
 	case target_statuscode < 500: // NON-SERVER ERROR
 		if makeCloneRequest && (config.ClonePercent == 100.0 || clone_random < config.ClonePercent) {
-			clone_statuscode, clone_contentlength = p.ServeCloneHTTP(clone_req, uid)
+			clone_statuscode, clone_contentlength, clone_sha1 = p.ServeCloneHTTP(clone_req, uid)
 			// Ultra simple timing information for total of both a & b
 			duration = time.Since(t).Nanoseconds() / 1000000
 		}
@@ -656,7 +751,8 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	if makeCloneRequest && clone_statuscode > 0 {
 		infoSuccess = "CloneProxy Responses Match"
 	}
-	if (makeCloneRequest && clone_statuscode > 0) && ((clone_statuscode != target_statuscode) || (clone_contentlength != target_contentlength)) {
+
+	if (makeCloneRequest && clone_statuscode > 0) && ((clone_statuscode != target_statuscode) || (clone_sha1 != target_sha1) || (clone_contentlength != target_contentlength)) {
 		total_mismatches.Add(1)
 		log.WithFields(log.Fields{
 			"uuid":              uid,
@@ -666,6 +762,8 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"b_response_code":   clone_statuscode,
 			"a_response_length": target_contentlength,
 			"b_response_length": clone_contentlength,
+			"a_sha1":			 target_sha1,
+			"b_sha1":			 clone_sha1,
 			"duration":          duration,
 		}).Warn("CloneProxy Responses Mismatch")
 	} else {
@@ -677,6 +775,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			"request_contentlength": req.ContentLength,
 			"response_code":         target_statuscode,
 			"response_length":       target_contentlength,
+			"sha1":					 target_sha1,
 			"duration":              duration,
 			"clone_request":		 makeCloneRequest,
 		}).Info(infoSuccess)
@@ -904,21 +1003,33 @@ func increaseTCPLimits() {
 }
 
 func Rewrite(request string) (*url.URL, error) {
-	if config.Rewrite {
+	pathKey, err := getConfigPath(request)
+
+	if err != nil {
+		return nil, err
+	}
+
+	configRewrite := config.Paths[pathKey]["rewrite"].(bool)
+	if configRewrite {
 		rewrite := request
 
-		if len(config.RewriteRules) % 2 != 0 || len(config.RewriteRules) < 1 {
+		rewriteRules := config.Paths[pathKey]["rewriteRules"].([]interface{})
+		configRewriteRules := make([]string, 0, len(rewriteRules))
+		for _, rule := range rewriteRules {
+			configRewriteRules = append(configRewriteRules, rule.(string))
+		}
+		if len(configRewriteRules) % 2 != 0 || len(configRewriteRules) < 1 {
 			return nil, fmt.Errorf("Error: rewrite rule mismatch\n	Each pattern must have a corresponding substitution\n")
 		}
 
-		for i := 0; i < len(config.RewriteRules) - 1; i += 2 {
-			pattern, err := regexp.Compile(config.RewriteRules[i])
+		for i := 0; i < len(configRewriteRules) - 1; i += 2 {
+			pattern, err := regexp.Compile(configRewriteRules[i])
 
 			if err != nil {
-				return nil, fmt.Errorf("Error: %s is an invalid regex, not rewriting URL\n\n", config.RewriteRules[i])
+				return nil, fmt.Errorf("Error: %s is an invalid regex, not rewriting URL\n\n", configRewriteRules[i])
 			}
 
-			rewrite = pattern.ReplaceAllString(rewrite, config.RewriteRules[i+1])
+			rewrite = pattern.ReplaceAllString(rewrite, configRewriteRules[i+1])
 		}
 
 		return url.Parse(rewrite)
@@ -926,17 +1037,25 @@ func Rewrite(request string) (*url.URL, error) {
 	return nil, nil
 }
 
-func MatchingRule(requestURI string) (bool, error) {
-	if config.MatchingRule != "" {
-		exclude := strings.Contains(config.MatchingRule, exclusionFlag)
-		matchingRule := strings.TrimPrefix(config.MatchingRule, exclusionFlag)
+func MatchingRule(request string) (bool, error) {
+	pathKey, err := getConfigPath(request)
+
+	if err != nil {
+		return false, err
+	}
+
+	configMatchingRule := config.Paths[pathKey]["matchingRule"].(string)
+	configCloneUrl := config.Paths[pathKey]["clone"].(string)
+	if configMatchingRule != "" {
+		exclude := strings.Contains(configMatchingRule, exclusionFlag)
+		matchingRule := strings.TrimPrefix(configMatchingRule, exclusionFlag)
 		pattern, err := regexp.Compile(matchingRule)
 
 		if err != nil {
-			return false, fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", config.MatchingRule, config.CloneUrl)
+			return false, fmt.Errorf("Error: %s is an invalid regex, not sending to %s\n\n", configMatchingRule, configCloneUrl)
 		}
 
-		matches := pattern.MatchString(requestURI)
+		matches := pattern.MatchString(request)
 		if (exclude && matches) || (!exclude && !matches) {
 			// exclude: targetURLs matching the pattern || include: targetURLs not matching the pattern do not go to the b-side
 			return false, nil
@@ -949,7 +1068,7 @@ func MatchingRule(requestURI string) (bool, error) {
 func main() {
 	// Handle Option Processing
 	flag.Usage = func() {
-			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", version_str)
+			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", VERSION)
 			   fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
 			   flag.PrintDefaults()
 			   fmt.Fprintf(os.Stderr, `
@@ -966,6 +1085,12 @@ func main() {
 	}
 	flag.Parse()
 
+	if *version {
+		fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
+		return
+	}
+
+	fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
 	configuration(*configFile)
 
 	if config.Version {
@@ -1000,25 +1125,9 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	if !strings.HasPrefix(config.TargetUrl, "http") {
-		fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", config.TargetUrl)
-		flag.Usage()
-		os.Exit(1)
-	}
-	if config.CloneUrl != "" && !strings.HasPrefix(config.CloneUrl, "http") {
-		fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", config.CloneUrl)
-		flag.Usage()
-		os.Exit(1)
-	}
-
 	// Begin actual main function
 	increaseTCPLimits()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
-
-	targetURL := parseUrlWithDefaults(config.TargetUrl)
-	cloneURL := parseUrlWithDefaults(config.CloneUrl)
-
-	proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
 
 	// Regular publication of status messages
 	c := cron.New()
@@ -1031,7 +1140,7 @@ func main() {
 		Addr:         config.ListenPort,
 		WriteTimeout: time.Duration(time.Duration(config.ListenTimeout) * time.Second),
 		ReadTimeout:  time.Duration(time.Duration(config.ListenTimeout) * time.Second),
-		Handler:      proxy,
+		Handler:      &baseHandle{},
 		// TODO: Probably should add some denial of service max sizes etc...
 	}
 	if len(config.TlsKey) > 0 {
