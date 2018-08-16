@@ -668,20 +668,24 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	targetServed := req.Header.Get(cloneproxyHeader)
 	if targetServed != "" {
-		count, err := strconv.Atoi(targetServed)
-		if err == nil {
-			if count > 1 {
-				log.WithFields(log.Fields{
-					"cloneproxied traffic count": targetServed,
-				}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
-				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
-				return
-			}
-			if count == 1 {
-				// only serve a-side (target)
-				makeCloneRequest = false
-			}
-		}
+		//count, err := strconv.Atoi(targetServed)
+		//if err == nil {
+		//	if count > 1 {
+		//		log.WithFields(log.Fields{
+		//			"cloneproxied traffic count": targetServed,
+		//		}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
+		//		fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
+		//		return
+		//	}
+		//	if count == 1 {
+		//		// only serve a-side (target)
+		//		makeCloneRequest = false
+		//	}
+		//}
+		log.WithFields(log.Fields{
+			"cloneproxied traffic count": targetServed,
+		}).Info("Cloneproxied traffic counter: ", targetServed)
+		fmt.Println("Cloneproxied traffic counter:", targetServed)
 	}
 
 
