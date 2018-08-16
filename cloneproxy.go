@@ -672,9 +672,9 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		if err == nil {
 			if count > 1 {
 				log.WithFields(log.Fields{
-					"request URI": targetServed,
-				}).Info("Request counter exceeds maximum at %i", count)
-				fmt.Println("Requests exceed maximum, request URI:", targetServed)
+					"cloneproxied traffic count": targetServed,
+				}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
+				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
 				return
 			}
 			if count == 1 {
