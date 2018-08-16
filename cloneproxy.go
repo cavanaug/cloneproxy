@@ -69,6 +69,7 @@ import (
 	"syscall"
 	"time"
 	"encoding/hex"
+	"strconv"
 )
 
 type Config struct {
@@ -258,6 +259,19 @@ func getConfigPath(requestURI string) (string, error) {
 	return "", fmt.Errorf("Error: No path contains %s in the config file\n\n", requestURI)
 }
 
+func setCloneproxyHeader(reqHeader http.Header, outreq *http.Request) {
+	targetServed := reqHeader.Get(cloneproxyHeader)
+	if targetServed != "" {
+		count, err := strconv.Atoi(targetServed)
+		if err == nil {
+			count++
+			outreq.Header.Set(cloneproxyHeader, strconv.Itoa(count))
+		}
+	} else {
+		outreq.Header.Set(cloneproxyHeader, "1")
+	}
+}
+
 // Routes requests to appropriate ReverseCloneProxy handler
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestURI := r.RequestURI
@@ -372,7 +386,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
-	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+	setCloneproxyHeader(req.Header, outreq)
 	outreq.Header.Set(sideServedheader, "target (a-side)")
 
 	log.WithFields(log.Fields{
@@ -544,7 +558,8 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
-	outreq.Header.Set(cloneproxyHeader, req.Host + req.URL.Path)
+
+	setCloneproxyHeader(req.Header, outreq)
 	outreq.Header.Set(sideServedheader, "clone (b-side)")
 
 	log.WithFields(log.Fields{
@@ -638,13 +653,35 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
+	cloneURL, err := Rewrite(req.URL.RequestURI())
+	if err != nil {
+		fmt.Println(err)
+	}
+	if cloneURL == nil {
+		cloneURL = req.URL
+	}
+
+	makeCloneRequest, err := MatchingRule(req.URL.RequestURI())
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	targetServed := req.Header.Get(cloneproxyHeader)
 	if targetServed != "" {
-		log.WithFields(log.Fields{
-			"request URI": targetServed,
-		}).Info("Request already served")
-		fmt.Println("Request already served, request URI:", targetServed)
-		return
+		count, err := strconv.Atoi(targetServed)
+		if err == nil {
+			if count > 1 {
+				log.WithFields(log.Fields{
+					"request URI": targetServed,
+				}).Info("Request counter exceeds maximum at %i", count)
+				fmt.Println("Requests exceed maximum, request URI:", targetServed)
+				return
+			}
+			if count == 1 {
+				// only serve a-side (target)
+				makeCloneRequest = false
+			}
+		}
 	}
 
 
@@ -671,19 +708,6 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	//clone_req := new(http.Request)
 	//*clone_req = *req
 	//clone_req.Body = nopCloser{b2}
-
-	cloneURL, err := Rewrite(req.URL.RequestURI())
-	if err != nil {
-		fmt.Println(err)
-	}
-	if cloneURL == nil {
-		cloneURL = req.URL
-	}
-
-	makeCloneRequest, err := MatchingRule(req.URL.RequestURI())
-	if err != nil {
-		fmt.Println(err)
-	}
 
 	clone_req := &http.Request{
 		Method:        req.Method,
