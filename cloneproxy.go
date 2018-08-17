@@ -276,7 +276,7 @@ func setCloneproxyHeader(reqHeader http.Header, outreq *http.Request) {
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestURI := r.RequestURI
 
-	fmt.Println("Received request from:", r.Host + requestURI)
+	//fmt.Println("Received request from:", r.Host + requestURI)
 
 	pathKey, _ := getConfigPath(requestURI)
 
@@ -670,24 +670,20 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	targetServed := req.Header.Get(cloneproxyHeader)
 	if targetServed != "" {
-		//count, err := strconv.Atoi(targetServed)
-		//if err == nil {
-		//	if count > 1 {
-		//		log.WithFields(log.Fields{
-		//			"cloneproxied traffic count": targetServed,
-		//		}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
-		//		fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
-		//		return
-		//	}
-		//	if count == 1 {
-		//		// only serve a-side (target)
-		//		makeCloneRequest = false
-		//	}
-		//}
-		log.WithFields(log.Fields{
-			"cloneproxied traffic count": targetServed,
-		}).Info("Cloneproxied traffic counter: ", targetServed)
-		fmt.Println("Cloneproxied traffic counter:", targetServed)
+		count, err := strconv.Atoi(targetServed)
+		if err == nil {
+			if count > 1 {
+				log.WithFields(log.Fields{
+					"cloneproxied traffic count": targetServed,
+				}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
+				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
+				return
+			}
+			if count == 1 {
+				// only serve a-side (target)
+				makeCloneRequest = false
+			}
+		}
 	}
 
 
