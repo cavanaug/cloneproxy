@@ -1120,7 +1120,15 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)
+	type Version struct {
+		Version string
+		BuildDate string
+	}
+
+	versionStruct := Version{VERSION, minversion}
+	versionJSON, _ := json.Marshal(versionStruct)
+
+	fmt.Printf("%s\n\n", versionJSON)
 	configuration(*configFile)
 
 	if config.Version {
