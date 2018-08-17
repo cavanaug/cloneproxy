@@ -276,6 +276,8 @@ func setCloneproxyHeader(reqHeader http.Header, outreq *http.Request) {
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestURI := r.RequestURI
 
+	fmt.Println("Received request from:", r.Host + requestURI)
+
 	pathKey, _ := getConfigPath(requestURI)
 
 	if targetClone, ok := config.Paths[pathKey]; ok {
