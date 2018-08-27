@@ -249,12 +249,20 @@ func sha1Body(body []byte, headers []string) (string) {
 }
 
 func getConfigPath(requestURI string) (string, error) {
+	allPathsMatch := false
 	var pathKey string
 	for path := range config.Paths {
-		if strings.Contains(requestURI, path) {
+		if requestURI == path {
 			pathKey = path
 			return pathKey, nil
 		}
+		if path == "/" {
+			allPathsMatch = true
+		}
+	}
+
+	if allPathsMatch {
+		return "/", nil
 	}
 	return "", fmt.Errorf("Error: No path contains %s in the config file\n\n", requestURI)
 }
