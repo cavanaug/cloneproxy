@@ -291,6 +291,8 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if targetClone, ok := config.Paths[pathKey]; ok {
 		configTargetUrl := targetClone["target"].(string)
 		configCloneUrl := targetClone["clone"].(string)
+		targetInsecure := targetClone["targetInsecure"].(bool)
+		cloneInsecure := targetClone["cloneInsecure"].(bool)
 
 		targetURL := parseUrlWithDefaults(configTargetUrl)
 		cloneURL := parseUrlWithDefaults(configCloneUrl)
@@ -306,7 +308,7 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			os.Exit(1)
 		}
 
-		proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+		proxy := NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, targetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, cloneInsecure)
 		proxy.ServeHTTP(w, r)
 		return
 	}
