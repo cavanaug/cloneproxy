@@ -315,6 +315,11 @@ func TestCloneProxy(t *testing.T) {
 	fmt.Println()
 }
 
+func testHops(t * testing.T) {
+	fmt.Println("========TESTING CLONEPROXY HOPS========")
+	populateConfig()
+}
+
 func TestMain(m *testing.M) {
 	code := m.Run()
 	os.Exit(code)

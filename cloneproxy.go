@@ -107,9 +107,11 @@ var (
 	config Config
 	cloneproxyHeader  = "X-Cloneproxy-Request"
 	sideServedheader  = "X-Cloneproxy-Served"
+	cloneproxyXFF	  = "X-Cloneproxy-XFF"
 
 	configFile		  = flag.String("config-file", "config.hjson", "path to the hjson configuration file")
 	version			  = flag.Bool("version", false, VERSION)
+	help			  = flag.Bool("help", false, "displays this help message")
 
 	total_matches     = expvar.NewInt("total_matches")
 	total_mismatches  = expvar.NewInt("total_mismatches")
@@ -280,6 +282,31 @@ func setCloneproxyHeader(reqHeader http.Header, outreq *http.Request) {
 	}
 }
 
+func setCloneproxyXFFHeader(outreq *http.Request) (string) {
+	xffHeader := getIP()
+	xff := outreq.Header.Get(cloneproxyXFF)
+	if xff != "" {
+		xffHeader = xff + xffHeader
+		outreq.Header.Set(cloneproxyXFF, xffHeader)
+	} else {
+		outreq.Header.Set(cloneproxyXFF, xffHeader)
+	}
+
+	return xffHeader
+}
+
+func getIP() (string) {
+	// UDP doesn't have handshake or connection -- therefore, a connection is never established
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.String()
+}
+
 // Routes requests to appropriate ReverseCloneProxy handler
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestURI := r.RequestURI
@@ -400,6 +427,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 	setCloneproxyHeader(req.Header, outreq)
 	outreq.Header.Set(sideServedheader, "target (a-side)")
+	xffHeader := setCloneproxyXFFHeader(outreq)
 
 	log.WithFields(log.Fields{
 		"uuid":           uid,
@@ -478,6 +506,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"response_length": res_length,
 			"response_header": res.Header,
 			"response_body":   string(body),
+			"cloneproxy-xff": 	xffHeader,
 		}).Debug("Proxy Response (loglevel)")
 	} else {
 		log.WithFields(log.Fields{
@@ -573,6 +602,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 
 	setCloneproxyHeader(req.Header, outreq)
 	outreq.Header.Set(sideServedheader, "clone (b-side)")
+	xffHeader := setCloneproxyXFFHeader(outreq)
 
 	log.WithFields(log.Fields{
 		"uuid":                  uid,
@@ -611,6 +641,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 			"response_length": res_length,
 			"response_header": res.Header,
 			"response_body":   string(body),
+			"cloneproxy-xff": 	xffHeader,
 		}).Debug("Proxy Response (Details)")
 	} else {
 		log.WithFields(log.Fields{
@@ -1101,25 +1132,79 @@ func MatchingRule(request string) (bool, error) {
 	return true, nil
 }
 
+func displayHelpMessage() {
+	// global configuration variables
+	expandMaxTcp := "(int) Set the maximum tcp sockets for use."
+	jsonLogging := "(boolean) Write out the logs in JSON."
+	logLevel := "(int) Set the verbosity of logging, from 0 to 5.  A higher level results in more logged information.\n\t\t\t0=Error, 1=Warning, 2=Info, 3=Debug, 4=Verbose, 5=VerboseDebug. Set to at least 1 to be notified for mismatches.\n" +
+		"\t\t\tError:\tLogs 5XX response codes and unfufilled a and/or b side requests.\n\t\t\tWarn:\tLogs when the a and b side responses do not match (may be expected).\n\t\t\tInfo:\tLogs when a and b side responses match and when the number of cloneproxy hops exceeds a specified maximum.\n\t\t\t\t(default value of 2)" +
+		"\n\t\t\tDebug:\tLogs request fields for a and b side\n\t\t\tVerbose: Logs response fields for a and b side\n\t\t\tVerboseDebug: Logs response fields (including body) for a and b side."
+	logFilePath := "(string) Where to write the logs.  Leave empty if you don't want to write the logs to disk."
+	listenPort := "(:int) The port where cloneproxy listens for requests (default value of :8888)."
+	listenTimeout := "(int) Enforced client timeout. The number of seconds from the end of the request header read to the end of the response write."
+	tlsCert := "(string) The path to the TLS certificate file (must also provide the TLS key)(optional field)."
+	tlsKey := "(string) The path to the TLS private key file (optional field)."
+	targetTimeout := "(int) Enforced timeout in seconds for a-side traffic."
+	targetRewrite := "(boolean) Set to rewrite the host header when proxying a-side traffic."
+	cloneTimeout := "(int) Enforced timeout in seconds for b-side traffic."
+	cloneRewrite := "(boolean) Set to rewrite the host header when proxing b-side traffic."
+	clonePercent := "(float64) The percentage of traffic to send to b-side."
+
+	// path configuration variables
+	target := "(string) The a-side URL. Typically the original/intended destination."
+	clone := "(string) The b-side URL."
+	targetInsecure := "(boolean) Insecure SSL validation for target (a-Side) traffic."
+	cloneInsecure := "(boolean) Insecure SSL validation for clone (b-Side) traffic."
+	rewrite := "(boolean) Set if you want to rewrite the clone (b-side) URL"
+	rewriteRules := "(array of strings) Specify the pattern to match in the URI and what should be substituted in its place.\n\t\t\tEach pattern must have an accompanying substitution and vice versa.  Pattern-Substitution rules are handled sequentially"
+	matchingRule := "(string/regex) Specifies whether to send to the clone (b-side) based on the path.\n\t\t\tSend to b-side if empty '' or if the path matches the specified pattern.\n\t\t\tPrefix '!' to pattern if you want to send to the b-side only if the path doesn't match a pattern."
+
+	fmt.Fprintf(os.Stderr, "Version: %s\n\n", VERSION)
+
+	fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
+	flag.PrintDefaults()
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintln(os.Stderr, "CONFIGURATION:")
+	fmt.Fprintln(os.Stderr, "  NOTE: cloneproxy assumes all variables have been properly set in the configuration file (unless otherwise specified, cloneproxy looks in the current directory for a file named 'config.hjson').")
+	fmt.Fprintln(os.Stderr, "  Furthermore, config.hjson should contain all the information necessary to get up and running.  The information provided in config.hjson has been reproduced here for convenience.")
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\t",
+		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent)
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "  Per Path Configurations:\n\ttarget:\t\t%s\n\tclone:\t\t%s\n\ttargetInsecure:\t%s\n\tcloneInsecure:\t%s\n\trewrite:\t%s\n\trewriteRules:\t%s\n\tmatchingRule:\t%s\n\t",
+		target, clone, targetInsecure, cloneInsecure, rewrite, rewriteRules, matchingRule)
+}
+
 func main() {
 	// Handle Option Processing
 	flag.Usage = func() {
-			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", VERSION)
-			   fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
-			   flag.PrintDefaults()
-			   fmt.Fprintf(os.Stderr, `
-%s:
-  HTTP_PROXY    proxy for HTTP requests; complete URL or HOST[:PORT]
-                used for HTTPS requests if HTTPS_PROXY undefined
-  HTTPS_PROXY   proxy for HTTPS requests; complete URL or HOST[:PORT]
-  NO_PROXY      comma-separated list of hosts to exclude from proxy
-`, "ENVIRONMENT")
-			   fmt.Fprintf(os.Stderr, `
-%s:
-  WebSite       https://github.com/cavanaug/cloneproxy
-`, "MISC")
+		displayHelpMessage()
 	}
+//	flag.Usage = func() {
+//			   fmt.Fprintf(os.Stderr, "Version: %s\n\n", VERSION)
+//			   fmt.Fprintf(os.Stderr, "USAGE: %s [OPTIONS]\n\nOPTIONS:\n", os.Args[0])
+//			   flag.PrintDefaults()
+//			   fmt.Fprintf(os.Stderr, `
+//%s:
+//  HTTP_PROXY    proxy for HTTP requests; complete URL or HOST[:PORT]
+//                used for HTTPS requests if HTTPS_PROXY undefined
+//  HTTPS_PROXY   proxy for HTTPS requests; complete URL or HOST[:PORT]
+//  NO_PROXY      comma-separated list of hosts to exclude from proxy
+//`, "ENVIRONMENT")
+//			   fmt.Fprintf(os.Stderr, `
+//%s:
+//  WebSite       https://github.com/cavanaug/cloneproxy
+//`, "MISC")
+//	}
 	flag.Parse()
+
+	if *help {
+		displayHelpMessage()
+		return
+	}
 
 	if *version {
 		fmt.Printf("Version: %s\tBuild Date: %s\n", VERSION, minversion)

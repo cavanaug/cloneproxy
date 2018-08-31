@@ -15,7 +15,7 @@
         "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
 
         # server port to listen for requests
-        "ListenPort": ":8888"
+        "ListenPort": ":8889"
 
         # server timeout for clients communicating to server
         "ListenTimeout": 900
@@ -32,17 +32,11 @@
         # rewrite the host header when proxying target (A-Side) traffic
         "TargetRewrite": false
 
-        # insecure SSL validation for target (A-Side) traffic
-        "TargetInsecure": false
-
         # timeout in seconds for clone (B-Side) traffic
         "CloneTimeout": 5
 
         # rewrite the host header when proxing clone (B-Side) traffic
         "CloneRewrite": false
-
-        # insecure SSL validation for clone (B-Side) traffic
-        "CloneInsecure": false
 
         # float64 percentage of traffic to send to clone (B Side)
         "ClonePercent": 100.0
@@ -73,18 +67,39 @@
         #               - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
         "Paths":
         {
-            # path      # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
-            "/":        {
-                            "target": "http://localhost:8080"
-                            "clone":  "http://localhost:8081"
-                            # whether to rewrite the clone (B-side) URL
-                            "rewrite": false
-                            "rewriteRules":
-                            [
-                                # pattern   substitution
-                                "\/"        "/test"
-                            ]
-                            "matchingRule": "/"
-                        }
+            # path                          # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
+            "/project/iink/":               {
+                                                "target": "http://localhost:8888"
+                                                "clone":  "http://localhost:8081"
+                                                # insecure SSL validation for target (A-Side) traffic
+                                                "targetInsecure": false
+                                                # insecure SSL validation for clone (B-Side) traffic
+                                                "cloneInsecure": false
+                                                # whether to rewrite the clone (B-side) URL
+                                                "rewrite": false
+                                                "rewriteRules":
+                                                [
+                                                    # pattern   substitution
+                                                    "\/"        "/test"
+                                                ]
+                                                "matchingRule": "/"
+                                            }
+
+            "/":                            {
+                                                "target": "http://localhost:8888"
+                                                "clone":  "http://localhost:8081"
+                                                # insecure SSL validation for target (A-Side) traffic
+                                                "targetInsecure": false
+                                                # insecure SSL validation for clone (B-Side) traffic
+                                                "cloneInsecure": false
+                                                # whether to rewrite the clone (B-side) URL
+                                                "rewrite": false
+                                                "rewriteRules":
+                                                [
+                                                    # pattern   substitution
+                                                    "\/"        "/test"
+                                                ]
+                                                "matchingRule": "/"
+                                            }
         }
 }
