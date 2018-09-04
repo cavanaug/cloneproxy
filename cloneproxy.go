@@ -1152,6 +1152,8 @@ func displayHelpMessage() {
 	cloneTimeout := "(int) Enforced timeout in seconds for b-side traffic."
 	cloneRewrite := "(boolean) Set to rewrite the host header when proxing b-side traffic."
 	clonePercent := "(float64) The percentage of traffic to send to b-side."
+	maxTotalHops := "(int) The maximum number of cloneproxied requests to serve, where a cloneproxied request is a request from another cloneproxy instance.\n\t\t\tAny cloneproxied requests exceeding this will be dropped. Meant to prevent cloneproxy request loops."
+	maxCloneHops := "(int) The maximum number of cloneproxied requests to serve for the b-side. Any cloneproxied requests exceeding this will not serve the b-side."
 
 	// path configuration variables
 	target := "(string) The a-side URL. Typically the original/intended destination."
@@ -1173,8 +1175,8 @@ func displayHelpMessage() {
 	fmt.Fprintln(os.Stderr, "  Furthermore, config.hjson should contain all the information necessary to get up and running.  The information provided in config.hjson has been reproduced here for convenience.")
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\t",
-		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent)
+	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\tMaxTotalHops:\t%s\n\tMaxCloneHops:\t%s\n\t",
+		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent, maxTotalHops, maxCloneHops)
 	fmt.Fprintln(os.Stderr)
 
 	fmt.Fprintf(os.Stderr, "  Per Path Configurations:\n\ttarget:\t\t%s\n\tclone:\t\t%s\n\ttargetInsecure:\t%s\n\tcloneInsecure:\t%s\n\trewrite:\t%s\n\trewriteRules:\t%s\n\tmatchingRule:\t%s\n\t",

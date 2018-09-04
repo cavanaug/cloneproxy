@@ -6,10 +6,10 @@
     "ExpandMaxTcp": 4096
 
     # write the logs in json for easier processing
-    "JsonLogging": false
+    "JsonLogging": true
 
     # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
-    "LogLevel": 1
+    "LogLevel": 5
 
     # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
     "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
@@ -32,20 +32,20 @@
     # rewrite the host header when proxying target (A-Side) traffic
     "TargetRewrite": false
 
-    # insecure SSL validation for target (A-Side) traffic
-    "TargetInsecure": false
-
     # timeout in seconds for clone (B-Side) traffic
     "CloneTimeout": 5
 
     # rewrite the host header when proxing clone (B-Side) traffic
     "CloneRewrite": false
 
-    # insecure SSL validation for clone (B-Side) traffic
-    "CloneInsecure": false
-
     # float64 percentage of traffic to send to clone (B Side)
     "ClonePercent": 100.0
+
+    # the maximum number of cloneproxied requests to serve (cloneproxied requests exceeding this will be dropped)
+    "MaxTotalHops": 2
+
+    # the number of cloneproxied requests to serve for the b-side (cloneproxied requests exceeding this will not serve b-side)
+    "MaxCloneHops": 1
 
     "Paths":
     {
@@ -53,6 +53,10 @@
         "/project/5AF308SDF093JF02/queues/wrong_queue_name":        {
                                                                         "target": "http://localhost:8080"
                                                                         "clone":  "/project/5AF308SDF093JF02/queues/wrong_queue_name"
+                                                                        # insecure SSL validation for target (A-Side) traffic
+                                                                        "targetInsecure": false
+                                                                        # insecure SSL validation for clone (B-Side) traffic
+                                                                        "cloneInsecure": false
                                                                         # whether to rewrite the clone (B-side) URL
                                                                         "rewrite": true
                                                                         "rewriteRules":
@@ -66,6 +70,10 @@
         "/localhost:8080":                                          {
                                                                         "target": "http://localhost:8080"
                                                                         "clone":  "/project/5AF308SDF093JF02/queues/wrong_queue_name"
+                                                                        # insecure SSL validation for target (A-Side) traffic
+                                                                        "targetInsecure": false
+                                                                        # insecure SSL validation for clone (B-Side) traffic
+                                                                        "cloneInsecure": false
                                                                         # whether to rewrite the clone (B-side) URL
                                                                         "rewrite": true
                                                                         "rewriteRules":
@@ -79,6 +87,10 @@
         "http://localhost:8081":                                    {
                                                                         "target": "http://localhost:8080"
                                                                         "clone":  "http://localhost:8081"
+                                                                        # insecure SSL validation for target (A-Side) traffic
+                                                                        "targetInsecure": false
+                                                                        # insecure SSL validation for clone (B-Side) traffic
+                                                                        "cloneInsecure": false
                                                                         # whether to rewrite the clone (B-side) URL
                                                                         "rewrite": true
                                                                         "rewriteRules":
@@ -92,6 +104,10 @@
         "/test":                                                     {
                                                                         "target": "http://localhost:8080"
                                                                         "clone":  "http://localhost:8081"
+                                                                        # insecure SSL validation for target (A-Side) traffic
+                                                                        "targetInsecure": false
+                                                                        # insecure SSL validation for clone (B-Side) traffic
+                                                                        "cloneInsecure": false
                                                                         # whether to rewrite the clone (B-side) URL
                                                                         "rewrite": false
                                                                         "rewriteRules":
