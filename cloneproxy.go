@@ -723,7 +723,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
 				return
 			}
-			if count == config.MaxCloneHops {
+			if count >= config.MaxCloneHops {
 				// only serve a-side (target)
 				makeCloneRequest = false
 			}
@@ -1152,8 +1152,8 @@ func displayHelpMessage() {
 	cloneTimeout := "(int) Enforced timeout in seconds for b-side traffic."
 	cloneRewrite := "(boolean) Set to rewrite the host header when proxing b-side traffic."
 	clonePercent := "(float64) The percentage of traffic to send to b-side."
-	maxTotalHops := "(int) The maximum number of cloneproxied requests to serve, where a cloneproxied request is a request from another cloneproxy instance.\n\t\t\tAny cloneproxied requests exceeding this will be dropped. Meant to prevent cloneproxy request loops."
-	maxCloneHops := "(int) The maximum number of cloneproxied requests to serve for the b-side. Any cloneproxied requests exceeding this will not serve the b-side."
+	maxTotalHops := "(int) The maximum number of cloneproxied requests to serve, where a cloneproxied request is a request from another cloneproxy instance.\n\t\t\tAny cloneproxied requests strictly exceeding this will be dropped. Meant to prevent cloneproxy request loops."
+	maxCloneHops := "(int) The maximum number of cloneproxied requests to serve for the b-side. Any cloneproxied requests greater than or equal to this will not serve the b-side."
 
 	// path configuration variables
 	target := "(string) The a-side URL. Typically the original/intended destination."

@@ -41,10 +41,10 @@
         # float64 percentage of traffic to send to clone (B Side)
         "ClonePercent": 100.0
 
-        # the maximum number of cloneproxied requests to serve (cloneproxied requests exceeding this will be dropped)
+        # the maximum number of cloneproxied requests to serve (cloneproxied requests strictly exceeding this will be dropped)
         "MaxTotalHops": 2
 
-        # the number of cloneproxied requests to serve for the b-side (cloneproxied requests exceeding this will not serve b-side)
+        # the number of cloneproxied requests to serve for the b-side (cloneproxied requests greater than or equal to this will not serve b-side)
         "MaxCloneHops": 1
 
 
