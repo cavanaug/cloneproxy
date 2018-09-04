@@ -101,7 +101,7 @@
                                                                         "matchingRule": "/"
                                                                     }
 
-        "/test":                                                     {
+        "/test":                                                    {
                                                                         "target": "http://localhost:8080"
                                                                         "clone":  "http://localhost:8081"
                                                                         # insecure SSL validation for target (A-Side) traffic
@@ -117,5 +117,22 @@
                                                                         ]
                                                                         "matchingRule": "/"
                                                                     }
-    }
+
+        "/hops":                                                     {
+                                                                        "target": "http://localhost:8888"
+                                                                        "clone":  "http://localhost:8080"
+                                                                        # insecure SSL validation for target (A-Side) traffic
+                                                                        "targetInsecure": false
+                                                                        # insecure SSL validation for clone (B-Side) traffic
+                                                                        "cloneInsecure": false
+                                                                        # whether to rewrite the clone (B-side) URL
+                                                                        "rewrite": false
+                                                                        "rewriteRules":
+                                                                        [
+                                                                            # pattern               substitution
+                                                                            ""                      ""
+                                                                        ]
+                                                                        "matchingRule": "/"
+                                                                    }
+        }
 }
