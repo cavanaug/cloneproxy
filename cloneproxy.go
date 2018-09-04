@@ -93,6 +93,9 @@ type Config struct {
 	CloneInsecure	bool
 	ClonePercent	float64
 
+	MaxTotalHops int
+	MaxCloneHops int
+
 	Paths			map[string]map[string]interface{}
 }
 
@@ -286,7 +289,7 @@ func setCloneproxyXFFHeader(outreq *http.Request) (string) {
 	xffHeader := getIP()
 	xff := outreq.Header.Get(cloneproxyXFF)
 	if xff != "" {
-		xffHeader = xff + xffHeader
+		xffHeader = xff + "," + xffHeader
 		outreq.Header.Set(cloneproxyXFF, xffHeader)
 	} else {
 		outreq.Header.Set(cloneproxyXFF, xffHeader)
@@ -713,14 +716,14 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	if targetServed != "" {
 		count, err := strconv.Atoi(targetServed)
 		if err == nil {
-			if count > 1 {
+			if count > config.MaxTotalHops {
 				log.WithFields(log.Fields{
 					"cloneproxied traffic count": targetServed,
 				}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
 				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
 				return
 			}
-			if count == 1 {
+			if count == config.MaxCloneHops {
 				// only serve a-side (target)
 				makeCloneRequest = false
 			}
@@ -1170,7 +1173,7 @@ func displayHelpMessage() {
 	fmt.Fprintln(os.Stderr, "  Furthermore, config.hjson should contain all the information necessary to get up and running.  The information provided in config.hjson has been reproduced here for convenience.")
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\t",
+	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\t",
 		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent)
 	fmt.Fprintln(os.Stderr)
 

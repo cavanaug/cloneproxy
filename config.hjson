@@ -15,7 +15,7 @@
         "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
 
         # server port to listen for requests
-        "ListenPort": ":8889"
+        "ListenPort": ":8888"
 
         # server timeout for clients communicating to server
         "ListenTimeout": 900
@@ -41,6 +41,11 @@
         # float64 percentage of traffic to send to clone (B Side)
         "ClonePercent": 100.0
 
+        # the maximum number of cloneproxied requests to serve (cloneproxied requests exceeding this will be dropped)
+        "MaxTotalHops": 2
+
+        # the number of cloneproxied requests to serve for the b-side (cloneproxied requests exceeding this will not serve b-side)
+        "MaxCloneHops": 1
 
 
         # Maps the request URI (path) to the desired clone (B-side)
@@ -69,7 +74,7 @@
         {
             # path                          # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
             "/project/iink/":               {
-                                                "target": "http://localhost:8888"
+                                                "target": "http://localhost:8080"
                                                 "clone":  "http://localhost:8081"
                                                 # insecure SSL validation for target (A-Side) traffic
                                                 "targetInsecure": false
