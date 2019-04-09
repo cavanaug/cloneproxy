@@ -452,6 +452,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 			"error":         err,
 		}).Error("Proxy Response")
 		rw.WriteHeader(http.StatusBadGateway)
+		res.Body.Close()
 		return int(http.StatusBadGateway), int64(0), ""
 	}
 
@@ -625,9 +626,10 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 			"response_code": http.StatusBadGateway,
 			"error":         err,
 		}).Error("Proxy Response")
+		res.Body.Close()
 		return http.StatusBadGateway, int64(0), ""
 	}
-	defer res.Body.Close() // ensure we dont bleed connections
+	// defer res.Body.Close() // ensure we dont bleed connections
 
 	body, _ := ioutil.ReadAll(res.Body)
 	res_length := int64(len(fmt.Sprintf("%s", body)))
@@ -672,6 +674,7 @@ func (p *ReverseClonedProxy) ServeCloneHTTP(req *http.Request, uid uuid.UUID) (i
 
 	sha := sha1Body(body, headersToRemove)
 
+	res.Body.Close()
 	return res.StatusCode, res_length, sha
 }
 
@@ -696,6 +699,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// Normal mechanism for expvar support doesnt work with ReverseProxy
 	if req.URL.Path == "/debug/vars" && req.Method == "GET" {
 		expvar.Handler().ServeHTTP(rw, req)
+		req.Body.Close()
 		return
 	}
 
@@ -721,6 +725,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 					"cloneproxied traffic count": targetServed,
 				}).Info("Cloneproxied traffic counter exceeds maximum at ", count)
 				fmt.Println("Cloneproxied traffic exceed maximum at:", targetServed)
+				req.Body.Close()
 				return
 			}
 			if count >= config.MaxCloneHops {
