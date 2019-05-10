@@ -84,6 +84,7 @@ type Config struct {
 	ListenTimeout int
 	TlsCert       string
 	TlsKey        string
+	MinVerTls     float64
 
 	TargetTimeout  int
 	TargetRewrite  bool
@@ -99,6 +100,9 @@ type Config struct {
 
 	Paths map[string]map[string]interface{}
 }
+
+var tlsConfig *tls.Config
+var tlsConn *tls.Conn
 
 const exclusionFlag = "!"
 
@@ -679,6 +683,19 @@ type nopCloser struct {
 	io.Reader
 }
 
+func GetTlsProtocol(version uint16) string {
+	switch {
+	case version == tls.VersionTLS10:
+		return "TLS1.0"
+	case version == tls.VersionTLS11:
+		return "TLS1.1"
+	case version == tls.VersionTLS12:
+		return "TLS1.2"
+	default:
+		return "Unknown"
+	}
+}
+
 func (nopCloser) Close() error { return nil }
 
 // ***************************************************************************
@@ -697,6 +714,19 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	if req.URL.Path == "/debug/vars" && req.Method == "GET" {
 		expvar.Handler().ServeHTTP(rw, req)
 		return
+	}
+
+	if len(config.TlsKey) > 0 {
+		if tlsConn != nil {
+			log.WithFields(log.Fields{
+				"ConnectionState": tlsConn.ConnectionState(),
+			}).Debug("Connection State")
+
+			log.WithFields(log.Fields{
+				"Connected with TLS Protocol": GetTlsProtocol(tlsConn.ConnectionState().Version),
+				"Min TLS Protocol":            config.MinVerTls,
+			}).Debug("TLS Info")
+		}
 	}
 
 	cloneURL, err := Rewrite(req.URL.RequestURI())
@@ -1001,21 +1031,26 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			req.Header.Set("User-Agent", "")
 		}
 	}
+
 	return &ReverseClonedProxy{
 		Director:      director,
 		DirectorClone: directorclone,
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
-				Timeout:   time.Duration(time.Duration(target_timeout) * time.Second),
+				Timeout:   time.Duration(time.Duration(clone_timeout) * time.Second),
 				KeepAlive: 60 * time.Second,
 			}).Dial,
 			MaxIdleConns:        50,
 			MaxIdleConnsPerHost: 50,
-			TLSHandshakeTimeout: 5 * time.Second,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: target_insecure,
+			DialTLS: func(network, addr string) (net.Conn, error) {
+				var err error
+				tlsConn, err = tls.Dial(network, addr, tlsConfig)
+
+				return tlsConn, err
 			},
+			TLSHandshakeTimeout: 5 * time.Second,
+			TLSClientConfig:     tlsConfig,
 		},
 		TransportClone: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -1025,10 +1060,14 @@ func NewCloneProxy(target *url.URL, target_timeout int, target_rewrite bool, tar
 			}).Dial,
 			MaxIdleConns:        50,
 			MaxIdleConnsPerHost: 50,
-			TLSHandshakeTimeout: 5 * time.Second,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: clone_insecure,
+			DialTLS: func(network, addr string) (net.Conn, error) {
+				var err error
+				tlsConn, err = tls.Dial(network, addr, tlsConfig)
+
+				return tlsConn, err
 			},
+			TLSHandshakeTimeout: 5 * time.Second,
+			TLSClientConfig:     tlsConfig,
 		},
 	}
 }
@@ -1146,6 +1185,7 @@ func displayHelpMessage() {
 	listenTimeout := "(int) Enforced client timeout. The number of seconds from the end of the request header read to the end of the response write."
 	tlsCert := "(string) The path to the TLS certificate file (must also provide the TLS key)(optional field)."
 	tlsKey := "(string) The path to the TLS private key file (optional field)."
+	MinVerTls := "(float64) The minimum version of TLS to support - up to TLS1.2 (optional field - defaults to TLS1.0)."
 	targetTimeout := "(int) Enforced timeout in seconds for a-side traffic."
 	targetRewrite := "(boolean) Set to rewrite the host header when proxying a-side traffic."
 	cloneTimeout := "(int) Enforced timeout in seconds for b-side traffic."
@@ -1174,8 +1214,8 @@ func displayHelpMessage() {
 	fmt.Fprintln(os.Stderr, "  Furthermore, config.hjson should contain all the information necessary to get up and running.  The information provided in config.hjson has been reproduced here for convenience.")
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\tMaxTotalHops:\t%s\n\tMaxCloneHops:\t%s\n\t",
-		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent, maxTotalHops, maxCloneHops)
+	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tMinVerTls:\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\tMaxTotalHops:\t%s\n\tMaxCloneHops:\t%s\n\t",
+		expandMaxTcp, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, MinVerTls, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent, maxTotalHops, maxCloneHops)
 	fmt.Fprintln(os.Stderr)
 
 	fmt.Fprintf(os.Stderr, "  Per Path Configurations:\n\ttarget:\t\t%s\n\tclone:\t\t%s\n\ttargetInsecure:\t%s\n\tcloneInsecure:\t%s\n\trewrite:\t%s\n\trewriteRules:\t%s\n\tmatchingRule:\t%s\n\t",
@@ -1276,6 +1316,29 @@ func main() {
 		// TODO: Probably should add some denial of service max sizes etc...
 	}
 	if len(config.TlsKey) > 0 {
+		var minVersion uint16
+		switch {
+		case config.MinVerTls == 1.1:
+			minVersion = tls.VersionTLS11
+		case config.MinVerTls == 1.2:
+			minVersion = tls.VersionTLS12
+		default:
+			minVersion = tls.VersionTLS10
+		}
+
+		tlsConfig = &tls.Config{
+			MinVersion:               minVersion,
+			PreferServerCipherSuites: true,
+			InsecureSkipVerify:       true,
+		}
+
+		s := &http.Server{
+			Addr:         config.ListenPort,
+			WriteTimeout: time.Duration(time.Duration(config.ListenTimeout) * time.Second),
+			ReadTimeout:  time.Duration(time.Duration(config.ListenTimeout) * time.Second),
+			Handler:      &baseHandle{},
+			TLSConfig:    tlsConfig,
+		}
 		log.Fatal(s.ListenAndServeTLS(config.TlsCert, config.TlsKey))
 	} else {
 		log.Fatal(s.ListenAndServe())

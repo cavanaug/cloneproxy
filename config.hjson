@@ -12,7 +12,7 @@
         "LogLevel": 5
 
         # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
-        "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
+        "LogFilePath": "/home/jeff/Downloads/cloneproxy.log"
 
         # server port to listen for requests
         "ListenPort": ":8888"
@@ -21,10 +21,13 @@
         "ListenTimeout": 900
 
         # path to the TLS certificate file
-        "TlsCert": ""
+        "TlsCert": "localhost.crt"
 
         # path to the TLS private key file
-        "TlsKey": ""
+        "TlsKey": "localhost.key"
+
+        # set the min TLS version (e.g., 1.1, 1.2)
+        "MinVerTls": 1.0
 
         # timeout in seconds for target (A-Side) traffic
         "TargetTimeout": 5
@@ -91,8 +94,8 @@
                                             }
 
             "/":                            {
-                                                "target": "http://localhost:8888"
-                                                "clone":  "http://localhost:8081"
+                                                "target": "https://localhost:8888/"
+                                                "clone":  "https://localhost:8888/"
                                                 # insecure SSL validation for target (A-Side) traffic
                                                 "targetInsecure": false
                                                 # insecure SSL validation for clone (B-Side) traffic

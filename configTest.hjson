@@ -26,6 +26,9 @@
     # path to the TLS private key file
     "TlsKey": ""
 
+    # set the min TLS version (e.g., 1.1, 1.2)
+    "MinVerTls": 1.0
+
     # timeout in seconds for target (A-Side) traffic
     "TargetTimeout": 5
 
