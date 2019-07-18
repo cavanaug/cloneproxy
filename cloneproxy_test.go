@@ -1,18 +1,20 @@
 package main
 
 import (
-	"testing"
-	"os"
-	"fmt"
-	"net/http"
-	"net/http/httputil"
-	"log"
-	"io/ioutil"
-	"net/http/httptest"
-	"io"
-	"github.com/hjson/hjson-go"
 	"encoding/json"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"os"
+	"reflect"
+	"testing"
+
+	"github.com/hjson/hjson-go"
 )
 
 var (
@@ -27,8 +29,8 @@ func populateConfig() {
 	}
 
 	hjson.Unmarshal(raw, &configData)
-	configJson, _ := json.Marshal(configData)
-	json.Unmarshal(configJson, &config)
+	configJSON, _ := json.Marshal(configData)
+	json.Unmarshal(configJSON, &config)
 }
 
 func TestRewrite(t *testing.T) {
@@ -40,9 +42,9 @@ func TestRewrite(t *testing.T) {
 
 	path := "/project/5AF308SDF093JF02/queues/wrong_queue_name"
 	configRewriteRules := []string{"wrong_queue_name", "right_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
 
-	cloneURL, err := Rewrite(path)
+	cloneURL, err := rewrite(path)
 	if err != nil {
 		t.Errorf("%s", err)
 	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
@@ -51,10 +53,10 @@ func TestRewrite(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-	configRewriteRules = []string{"wrong_queue_name", "",}
-	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name", "",}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
-	cloneURL, err = Rewrite(path)
+	configRewriteRules = []string{"wrong_queue_name", ""}
+	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name", ""}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
 	if err != nil {
 		t.Errorf("%s", err)
 	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/" {
@@ -64,9 +66,9 @@ func TestRewrite(t *testing.T) {
 	}
 
 	configRewriteRules = []string{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
-	config.Paths[path]["rewriteRules"] = []interface{}{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name",}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
-	cloneURL, err = Rewrite(path)
+	config.Paths[path]["rewriteRules"] = []interface{}{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
 	if err != nil {
 		t.Errorf("%s", err)
 	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
@@ -76,9 +78,9 @@ func TestRewrite(t *testing.T) {
 	}
 
 	configRewriteRules = []string{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
-	config.Paths[path]["rewriteRules"] = []interface{}{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name",}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
-	cloneURL, err = Rewrite(path)
+	config.Paths[path]["rewriteRules"] = []interface{}{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
 	if err != nil {
 		t.Errorf("%s", err)
 	} else if cloneURL.Path != "/project/6AF308SDF093JF03/queues/right_queue_name" {
@@ -89,9 +91,9 @@ func TestRewrite(t *testing.T) {
 
 	fmt.Println("\nTesting invalid regex...")
 	configRewriteRules = []string{"/queues/[0-9]++", "/right_queue_name"}
-	config.Paths[path]["rewriteRules"] = []interface{}{"/queues/[0-9]++", "/right_queue_name",}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
-	cloneURL, err = Rewrite(path)
+	config.Paths[path]["rewriteRules"] = []interface{}{"/queues/[0-9]++", "/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -104,7 +106,7 @@ func TestRewrite(t *testing.T) {
 	path = "/localhost:8080"
 	configRewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
 	config.Paths[path]["rewriteRules"] = []interface{}{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
-	cloneURL, err = Rewrite(path)
+	cloneURL, err = rewrite(path)
 	if err != nil {
 		t.Errorf("%s", err)
 	} else if cloneURL.Path != "/localhost:8080/bye" {
@@ -116,9 +118,9 @@ func TestRewrite(t *testing.T) {
 	// test rule matching
 	fmt.Println("\nTesting rules matching (each pattern must have a corresponding substitution)...")
 	configRewriteRules = []string{"wrong_queue_name"}
-	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name",}
-	fmt.Printf("\tTesting Rewrite Rules: '%s'... ", configRewriteRules[0])
-	cloneURL, err = Rewrite(path)
+	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s'... ", configRewriteRules[0])
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -130,7 +132,7 @@ func TestRewrite(t *testing.T) {
 	configRewriteRules = []string{}
 	config.Paths[path]["rewriteRules"] = []interface{}{}
 	fmt.Printf("\tTesting empty RewriteRules slice... ")
-	cloneURL, err = Rewrite(path)
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -160,7 +162,6 @@ func TestMatchingRule(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-
 	fmt.Print("Testing exlcusion rule... ")
 	configMatchingRule = "!localhost"
 	config.Paths[path]["matchingRule"] = configMatchingRule
@@ -173,7 +174,6 @@ func TestMatchingRule(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-
 	fmt.Print("Testing no rule... ")
 	configMatchingRule = ""
 	config.Paths[path]["matchingRule"] = configMatchingRule
@@ -185,7 +185,6 @@ func TestMatchingRule(t *testing.T) {
 	} else {
 		fmt.Println("passed")
 	}
-
 
 	fmt.Print("Testing invalid rule... ")
 	configMatchingRule = "localhost:[0-9]++"
@@ -206,6 +205,7 @@ var counter = struct {
 	target int
 	clone  int
 }{target: 0, clone: 0}
+
 func serverA(w http.ResponseWriter, req *http.Request) {
 	dump, err := httputil.DumpRequest(req, false)
 	if err != nil {
@@ -213,8 +213,7 @@ func serverA(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	counter.target += 1
-
+	counter.target++
 	fmt.Printf("---> %s %s %s %s\n", "8080", req.Method, req.URL.String(), req.UserAgent())
 }
 
@@ -225,14 +224,14 @@ func serverB(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	counter.clone += 1
+	counter.clone++
 
 	fmt.Printf("---> %s %s %s %s\n", "8081", req.Method, req.URL.String(), req.UserAgent())
 }
 
 func CloneProxy(listenPort string, path string) http.Handler {
-	targetURL := parseUrlWithDefaults(config.Paths[path]["target"].(string))
-	cloneURL := parseUrlWithDefaults(config.Paths[path]["clone"].(string))
+	targetURL := parseURLWithDefaults(config.Paths[path]["target"].(string))
+	cloneURL := parseURLWithDefaults(config.Paths[path]["clone"].(string))
 
 	if listenPort != "" {
 		config.ListenPort = listenPort
@@ -270,7 +269,7 @@ func TestCloneProxy(t *testing.T) {
 
 	targetRequests := 4
 	cloneRequests := 2
-	configurations := []struct{
+	configurations := []struct {
 		rewriteRules []string
 		matchingRule string
 	}{
@@ -280,7 +279,7 @@ func TestCloneProxy(t *testing.T) {
 
 	testPath := "/test"
 	for _, configuration := range configurations {
-		t.Run("Testing configurations..." , func(tst *testing.T) {
+		t.Run("Testing configurations...", func(tst *testing.T) {
 			config.Paths[testPath]["matchingRule"] = configuration.matchingRule
 
 			ts := httptest.NewServer(CloneProxy("", testPath))
@@ -288,10 +287,10 @@ func TestCloneProxy(t *testing.T) {
 
 			tests := []struct {
 				name string
-				req *http.Request
+				req  *http.Request
 			}{
-				{name: "Testing GET with MatchingRule " + configuration.matchingRule, req: makeReq("GET", ts.URL + testPath, nil)},
-				{name: "Testing POST with MatchingRule " + configuration.matchingRule, req: makeReq("POST", ts.URL + testPath, nil)},
+				{name: "Testing GET with MatchingRule " + configuration.matchingRule, req: makeReq("GET", ts.URL+testPath, nil)},
+				{name: "Testing POST with MatchingRule " + configuration.matchingRule, req: makeReq("POST", ts.URL+testPath, nil)},
 			}
 
 			for _, test := range tests {
@@ -299,10 +298,10 @@ func TestCloneProxy(t *testing.T) {
 					fmt.Println(test.name)
 
 					res, err := http.DefaultClient.Do(test.req)
-					defer res.Body.Close()
 					if err != nil {
 						t.Error(err)
 					}
+					defer res.Body.Close()
 					if _, err := ioutil.ReadAll(res.Body); err != nil {
 						// unexpected EOF, known issue with go
 					}
@@ -348,17 +347,51 @@ func TestHops(t *testing.T) {
 
 	totalCloneHops := 1
 	counter.target = 0
-	req := makeReq("GET", cloneproxy.URL + path, nil)
+	req := makeReq("GET", cloneproxy.URL+path, nil)
 	res, err := http.DefaultClient.Do(req)
-	defer res.Body.Close()
 	if err != nil {
 		t.Error(err)
 	}
+	defer res.Body.Close()
 
 	// we should only be making totalCloneHops number of requests to the b-side
 	if counter.target != totalCloneHops {
 		t.Errorf("expected %d hops, did %d instead\n", totalCloneHops, counter.target)
 	}
+	fmt.Println()
+}
+
+func TestServicePing(t *testing.T) {
+	fmt.Println("========TESTING /service/ping========")
+
+	populateConfig()
+	servicePing := "/service/ping"
+
+	cloneproxy := httptest.NewServer(&baseHandle{})
+
+	req := makeReq("GET", cloneproxy.URL+servicePing, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	response := map[string]string{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := map[string]string{"msg": "imok"}
+	if eq := reflect.DeepEqual(response, expected); !eq {
+		t.Errorf("server returned %v when it should have returned %v", response, expected)
+	}
+
 	fmt.Println()
 }
 

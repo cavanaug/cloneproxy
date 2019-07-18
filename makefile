@@ -1,6 +1,6 @@
 BINARY=cloneproxy
 
-VERSION=4.0.0
+VERSION=4.0.1
 BUILD=`date -u +%Y%m%d.%H%M%S`
 
 LDFLAGS=-ldflags "-X main.VERSION=${VERSION} -X main.minversion=${BUILD}"
