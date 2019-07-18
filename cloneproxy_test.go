@@ -392,6 +392,47 @@ func TestServicePing(t *testing.T) {
 		t.Errorf("server returned %v when it should have returned %v", response, expected)
 	}
 
+	fmt.Println("passed")
+	fmt.Println()
+}
+
+func TestMissingPathFromConfig(t *testing.T) {
+	fmt.Println("========TESTING Missing Path From Config Request========")
+
+	populateConfig()
+	endpoint := "/notInConfig"
+
+	cloneproxy := httptest.NewServer(&baseHandle{})
+
+	req := makeReq("GET", cloneproxy.URL+endpoint, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	response := map[string]string{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expectedStatusCode := 404
+	if res.StatusCode != expectedStatusCode {
+		t.Errorf("expected response status code %v to be %v", res.StatusCode, expectedStatusCode)
+	}
+
+	expectedResponseBody := map[string]string{"error": fmt.Sprintf("unable to process request: no path contains '%s' in the config file", endpoint)}
+	if eq := reflect.DeepEqual(response, expectedResponseBody); !eq {
+		t.Errorf("server returned %v when it should have returned %v", response, expectedResponseBody)
+	}
+
+	fmt.Println("passed")
 	fmt.Println()
 }
 

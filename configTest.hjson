@@ -121,7 +121,7 @@
                                                                         "matchingRule": "/"
                                                                     }
 
-        "/hops":                                                     {
+        "/hops":                                                    {
                                                                         "target": "http://localhost:8888"
                                                                         "clone":  "http://localhost:8080"
                                                                         # insecure SSL validation for target (A-Side) traffic

@@ -278,7 +278,7 @@ func getConfigPath(requestURI string) (string, error) {
 	if allPathsMatch {
 		return "/", nil
 	}
-	return "", fmt.Errorf("error: no path contains %s in the config file", requestURI)
+	return "", fmt.Errorf("no path contains '%s' in the config file", requestURI)
 }
 
 func setCloneproxyHeader(reqHeader http.Header, outreq *http.Request) {
@@ -331,7 +331,14 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathKey, _ := getConfigPath(requestURI)
+	pathKey, err := getConfigPath(requestURI)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusNotFound)
+		errorMsg := fmt.Sprintf("unable to process request: %v", err)
+		json.NewEncoder(w).Encode(map[string]string{"error": errorMsg})
+		return
+	}
 
 	if targetClone, ok := config.Paths[pathKey]; ok {
 		configTargetURL := targetClone["target"].(string)
@@ -342,12 +349,12 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		targetURL := parseURLWithDefaults(configTargetURL)
 		cloneURL := parseURLWithDefaults(configCloneURL)
 
-		if !strings.HasPrefix(configTargetURL, "http") {
+		if !strings.HasPrefix(configTargetURL, "http") && !strings.HasPrefix(configTargetURL, "https") {
 			fmt.Printf("Error: target url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", configTargetURL)
 			flag.Usage()
 			os.Exit(1)
 		}
-		if configCloneURL != "" && !strings.HasPrefix(configCloneURL, "http") {
+		if configCloneURL != "" && !strings.HasPrefix(configCloneURL, "http") && !strings.HasPrefix(configCloneURL, "https") {
 			fmt.Printf("Error: clone url %s is invalid\n   URL's must have a scheme defined, either http or https\n\n", configCloneURL)
 			flag.Usage()
 			os.Exit(1)
@@ -357,7 +364,10 @@ func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 		return
 	}
-	log.Println("Unable to process request for", requestURI)
+
+	log.Println("Unable to process request for:", requestURI)
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(map[string]string{"error": "unable to process request"})
 }
 
 // ServeTargetHTTP serves the http for the Target.
