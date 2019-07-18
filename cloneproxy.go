@@ -71,6 +71,9 @@ import (
 	"github.com/hjson/hjson-go"
 	"github.com/robfig/cron"
 	uuid "github.com/satori/go.uuid"
+
+	// profiling server
+	_ "net/http/pprof"
 )
 
 // Config represents cloneproxy's configuration file.
@@ -1308,6 +1311,12 @@ func main() {
 	c.Start()
 
 	logStatus()
+
+	// start profiling server
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	s := &http.Server{
 		Addr:         config.ListenPort,
 		WriteTimeout: time.Duration(time.Duration(config.ListenTimeout) * time.Second),
