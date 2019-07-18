@@ -324,7 +324,12 @@ func getIP() string {
 
 // Routes requests to appropriate ReverseCloneProxy handler
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now().UTC().UnixNano()
 	requestURI := r.RequestURI
+	defer func() {
+		respTime := (time.Now().UTC().UnixNano() - start) / int64(time.Millisecond)
+		log.Printf("request for %v took %v ms\n", requestURI, respTime)
+	}()
 
 	if r.URL.Path == "/service/ping" {
 		w.Header().Set("Content-Type", "application/json")
@@ -932,7 +937,7 @@ func (p *ReverseClonedProxy) copyBuffer(dst io.Writer, src io.Reader, buf []byte
 	for {
 		nr, rerr := src.Read(buf)
 		if rerr != nil && rerr != io.EOF {
-			log.Error("util: CloneProxy read error during resp body copy: %v", rerr)
+			log.Errorf("util: CloneProxy read error during resp body copy: %v", rerr)
 		}
 		if nr > 0 {
 			nw, werr := dst.Write(buf[:nr])
