@@ -2,6 +2,9 @@
         # show version number
         "Version": false
 
+        # log time taken to process http requests in ms
+        "EnableRequestProfiling": true
+
         # cloneproxy maximum tcp sockets for use
         "ExpandMaxTcp": 4096
 
@@ -21,10 +24,10 @@
         "ListenTimeout": 900
 
         # path to the TLS certificate file
-        "TlsCert": "localhost.crt"
+        "TlsCert": ""
 
         # path to the TLS private key file
-        "TlsKey": "localhost.key"
+        "TlsKey": ""
 
         # set the min TLS version (e.g., 1.1, 1.2)
         "MinVerTls": 1.0

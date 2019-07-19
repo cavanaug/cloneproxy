@@ -78,11 +78,12 @@ import (
 
 // Config represents cloneproxy's configuration file.
 type Config struct {
-	Version      bool
-	ExpandMaxTCP uint64
-	JSONLogging  bool
-	LogLevel     int
-	LogFilePath  string
+	Version                bool
+	EnableRequestProfiling bool
+	ExpandMaxTCP           uint64
+	JSONLogging            bool
+	LogLevel               int
+	LogFilePath            string
 
 	ListenPort    string
 	ListenTimeout int
@@ -324,12 +325,15 @@ func getIP() string {
 
 // Routes requests to appropriate ReverseCloneProxy handler
 func (h *baseHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now().UTC().UnixNano()
 	requestURI := r.RequestURI
-	defer func() {
-		respTime := (time.Now().UTC().UnixNano() - start) / int64(time.Millisecond)
-		log.Printf("request for %v took %v ms\n", requestURI, respTime)
-	}()
+
+	if config.EnableRequestProfiling {
+		start := time.Now().UTC().UnixNano()
+		defer func() {
+			respTime := (time.Now().UTC().UnixNano() - start) / int64(time.Millisecond)
+			log.Printf("request for '%v' took %v ms", requestURI, respTime)
+		}()
+	}
 
 	if r.URL.Path == "/service/ping" {
 		w.Header().Set("Content-Type", "application/json")
@@ -1198,6 +1202,7 @@ func MatchingRule(request string) (bool, error) {
 
 func displayHelpMessage() {
 	// global configuration variables
+	enableRequestProfiling := "(boolean) Logs the time taken to process a request (in ms)."
 	expandMaxTCP := "(int) Set the maximum tcp sockets for use."
 	jsonLogging := "(boolean) Write out the logs in JSON."
 	logLevel := "(int) Set the verbosity of logging, from 0 to 5.  A higher level results in more logged information.\n\t\t\t0=Error, 1=Warning, 2=Info, 3=Debug, 4=Verbose, 5=VerboseDebug. Set to at least 1 to be notified for mismatches.\n" +
@@ -1237,8 +1242,8 @@ func displayHelpMessage() {
 	fmt.Fprintln(os.Stderr, "  Furthermore, config.hjson should contain all the information necessary to get up and running.  The information provided in config.hjson has been reproduced here for convenience.")
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tMinVerTls:\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\tMaxTotalHops:\t%s\n\tMaxCloneHops:\t%s\n\t",
-		expandMaxTCP, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, MinVerTLS, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent, maxTotalHops, maxCloneHops)
+	fmt.Fprintf(os.Stderr, "  Global Configurations:\n\tEnableRequestProfiling:\t%s\n\tExpandMaxTcp:\t%s\n\tJsonLogging:\t%s\n\tLogLevel:\t%s\n\tLogFilePath:\t%s\n\tListenPort\t%s\n\tListenTimeout:\t%s\n\tTlsCert:\t%s\n\tTlsKey:\t\t%s\n\tMinVerTls:\t%s\n\tTargetTimeout:\t%s\n\tTargetRewrite:\t%s\n\tCloneTimeout:\t%s\n\tCloneRewrite:\t%s\n\tClonePercent:\t%s\n\tMaxTotalHops:\t%s\n\tMaxCloneHops:\t%s\n\t",
+		enableRequestProfiling, expandMaxTCP, jsonLogging, logLevel, logFilePath, listenPort, listenTimeout, tlsCert, tlsKey, MinVerTLS, targetTimeout, targetRewrite, cloneTimeout, cloneRewrite, clonePercent, maxTotalHops, maxCloneHops)
 	fmt.Fprintln(os.Stderr)
 
 	fmt.Fprintf(os.Stderr, "  Per Path Configurations:\n\ttarget:\t\t%s\n\tclone:\t\t%s\n\ttargetInsecure:\t%s\n\tcloneInsecure:\t%s\n\trewrite:\t%s\n\trewriteRules:\t%s\n\tmatchingRule:\t%s\n\t",

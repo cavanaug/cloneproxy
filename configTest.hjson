@@ -2,6 +2,9 @@
     # show version number
     "Version": false
 
+    # log time taken to process http requests in ms
+    "EnableRequestProfiling": true
+
     # cloneproxy maximum tcp sockets for use
     "ExpandMaxTcp": 4096
 
