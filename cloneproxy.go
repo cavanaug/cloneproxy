@@ -67,10 +67,10 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/hjson/hjson-go"
 	"github.com/robfig/cron"
 	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 
 	// profiling server
 	_ "net/http/pprof"
@@ -792,7 +792,7 @@ func (p *ReverseClonedProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	// Initialize tracking vars
-	uid, _ := uuid.NewV4()
+	uid := uuid.NewV4()
 	t := time.Now()
 
 	// Copy Body
