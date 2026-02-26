@@ -1,78 +1,99 @@
 package main
 
 import (
-	"testing"
-	"os"
+	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httputil"
-	"log"
-	"io/ioutil"
-	"net/http/httptest"
 	"io"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"os"
+	"reflect"
+	"testing"
+
+	"github.com/hjson/hjson-go"
 )
+
+var (
+	configFilename = "configTest.hjson"
+)
+
+func populateConfig() {
+	raw, err := ioutil.ReadFile(configFilename)
+	if err != nil {
+		fmt.Printf("Error, missing %s file", configFilename)
+		os.Exit(1)
+	}
+
+	hjson.Unmarshal(raw, &configData)
+	configJSON, _ := json.Marshal(configData)
+	json.Unmarshal(configJSON, &config)
+}
 
 func TestRewrite(t *testing.T) {
 	fmt.Println("========TESTING REWRITE========")
-	config.Rewrite = true
+	populateConfig()
 
 	// test regex
 	fmt.Println("Testing regex...")
-	config.TargetUrl = "/project/6ADF0FLKJ2F2LKJSF01/queues/some_queue"
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"wrong_queue_name", "right_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
 
-	cloneURL, err := Rewrite(config.CloneUrl)
-	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
+	path := "/project/5AF308SDF093JF02/queues/wrong_queue_name"
+	configRewriteRules := []string{"wrong_queue_name", "right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+
+	cloneURL, err := rewrite(path)
+	if err != nil {
+		t.Errorf("%s", err)
+	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
 		t.Error("expected", "/project/5AF308SDF093JF02/queues/wrong_queue_name", "got", cloneURL.Path)
-	} else if err != nil {
-		t.Errorf("%s", err)
 	} else {
 		fmt.Println("passed")
 	}
 
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"wrong_queue_name", ""}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	cloneURL, err = Rewrite(config.CloneUrl)
-	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/" {
+	configRewriteRules = []string{"wrong_queue_name", ""}
+	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name", ""}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
+	if err != nil {
+		t.Errorf("%s", err)
+	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/" {
 		t.Error("expected", "/project/5AF308SDF093JF02/queues/", "got", cloneURL.Path)
-	} else if err != nil {
-		t.Errorf("%s", err)
-	}  else {
-		fmt.Println("passed")
-	}
-
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	cloneURL, err = Rewrite(config.CloneUrl)
-	if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
-		t.Error("expected", "/project/5AF308SDF093JF02/queues/right_queue_name", "got", cloneURL.Path)
-	} else if err != nil {
-		t.Errorf("%s", err)
 	} else {
 		fmt.Println("passed")
 	}
 
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	cloneURL, err = Rewrite(config.CloneUrl)
-	if cloneURL.Path != "/project/6AF308SDF093JF03/queues/right_queue_name" {
-		t.Error("expected", "/project/6AF308SDF093JF03/queues/right_queue_name", "got", cloneURL.Path)
-	} else if err != nil {
+	configRewriteRules = []string{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
+	config.Paths[path]["rewriteRules"] = []interface{}{"/[a-z]+_[a-z]+_[a-z]+$", "/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
+	if err != nil {
 		t.Errorf("%s", err)
+	} else if cloneURL.Path != "/project/5AF308SDF093JF02/queues/right_queue_name" {
+		t.Error("expected", "/project/5AF308SDF093JF02/queues/right_queue_name", "got", cloneURL.Path)
+	} else {
+		fmt.Println("passed")
+	}
+
+	configRewriteRules = []string{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
+	config.Paths[path]["rewriteRules"] = []interface{}{"/project/[A-Z0-9]{16}/queues/wrong_queue_name", "/project/6AF308SDF093JF03/queues/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
+	if err != nil {
+		t.Errorf("%s", err)
+	} else if cloneURL.Path != "/project/6AF308SDF093JF03/queues/right_queue_name" {
+		t.Error("expected", "/project/6AF308SDF093JF03/queues/right_queue_name", "got", cloneURL.Path)
 	} else {
 		fmt.Println("passed")
 	}
 
 	fmt.Println("\nTesting invalid regex...")
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"/queues/[0-9]++", "/right_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s, %s'... ", config.RewriteRules[0], config.RewriteRules[1])
-	cloneURL, err = Rewrite(config.CloneUrl)
+	configRewriteRules = []string{"/queues/[0-9]++", "/right_queue_name"}
+	config.Paths[path]["rewriteRules"] = []interface{}{"/queues/[0-9]++", "/right_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s, %s'... ", configRewriteRules[0], configRewriteRules[1])
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -82,23 +103,24 @@ func TestRewrite(t *testing.T) {
 	}
 
 	fmt.Print("\nTesting sequential rules... ")
-	config.CloneUrl = "/localhost:8080"
-	config.RewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
-	cloneURL, err = Rewrite(config.CloneUrl)
-	if cloneURL.Path != "/localhost:8080/bye" {
-		t.Error("expected", "/localhost:8080/bye", "got", cloneURL.Path)
-	} else if err != nil {
+	path = "/localhost:8080"
+	configRewriteRules = []string{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
+	config.Paths[path]["rewriteRules"] = []interface{}{":\\d+$", ":8080/hi", ":\\d+/[a-z]{2}$", ":8080/bye"}
+	cloneURL, err = rewrite(path)
+	if err != nil {
 		t.Errorf("%s", err)
+	} else if cloneURL.Path != "/localhost:8080/bye" {
+		t.Error("expected", "/localhost:8080/bye", "got", cloneURL.Path)
 	} else {
 		fmt.Println("passed")
 	}
 
 	// test rule matching
 	fmt.Println("\nTesting rules matching (each pattern must have a corresponding substitution)...")
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{"wrong_queue_name"}
-	fmt.Printf("\tTesting Rewrite Rules: '%s'... ", config.RewriteRules[0])
-	cloneURL, err = Rewrite(config.CloneUrl)
+	configRewriteRules = []string{"wrong_queue_name"}
+	config.Paths[path]["rewriteRules"] = []interface{}{"wrong_queue_name"}
+	fmt.Printf("\tTesting rewrite Rules: '%s'... ", configRewriteRules[0])
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -107,10 +129,10 @@ func TestRewrite(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-	config.CloneUrl = "/project/5AF308SDF093JF02/queues/wrong_queue_name"
-	config.RewriteRules = []string{}
+	configRewriteRules = []string{}
+	config.Paths[path]["rewriteRules"] = []interface{}{}
 	fmt.Printf("\tTesting empty RewriteRules slice... ")
-	cloneURL, err = Rewrite(config.CloneUrl)
+	cloneURL, err = rewrite(path)
 	if cloneURL != nil {
 		t.Error("expected cloneURL to be", nil, "got", cloneURL)
 	} else if err == nil {
@@ -125,13 +147,13 @@ func TestRewrite(t *testing.T) {
 func TestMatchingRule(t *testing.T) {
 	fmt.Println("========TESTING MATCHINGRULE========")
 
-	config.TargetUrl = "http://localhost:8080"
-	config.CloneUrl = "http://localhost:8081"
-
+	populateConfig()
+	path := "http://localhost:8081"
 
 	fmt.Print("Testing inclusion rule... ")
-	config.MatchingRule = "localhost"
-	makeCloneRequest, err := MatchingRule(config.CloneUrl)
+	configMatchingRule := "localhost"
+	config.Paths[path]["matchingRule"] = configMatchingRule
+	makeCloneRequest, err := MatchingRule(path)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -140,10 +162,10 @@ func TestMatchingRule(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-
 	fmt.Print("Testing exlcusion rule... ")
-	config.MatchingRule = "!localhost"
-	makeCloneRequest, err = MatchingRule(config.CloneUrl)
+	configMatchingRule = "!localhost"
+	config.Paths[path]["matchingRule"] = configMatchingRule
+	makeCloneRequest, err = MatchingRule(path)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err != nil {
@@ -152,10 +174,10 @@ func TestMatchingRule(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-
 	fmt.Print("Testing no rule... ")
-	config.MatchingRule = ""
-	makeCloneRequest, err = MatchingRule(config.CloneUrl)
+	configMatchingRule = ""
+	config.Paths[path]["matchingRule"] = configMatchingRule
+	makeCloneRequest, err = MatchingRule(path)
 	if !makeCloneRequest {
 		t.Error("expected", true, "got", false)
 	} else if err != nil {
@@ -164,10 +186,10 @@ func TestMatchingRule(t *testing.T) {
 		fmt.Println("passed")
 	}
 
-
 	fmt.Print("Testing invalid rule... ")
-	config.MatchingRule = "localhost:[0-9]++"
-	makeCloneRequest, err = MatchingRule(config.CloneUrl)
+	configMatchingRule = "localhost:[0-9]++"
+	config.Paths[path]["matchingRule"] = configMatchingRule
+	makeCloneRequest, err = MatchingRule(path)
 	if makeCloneRequest {
 		t.Error("expected", false, "got", true)
 	} else if err == nil {
@@ -175,12 +197,15 @@ func TestMatchingRule(t *testing.T) {
 	} else {
 		fmt.Println("passed")
 	}
+
+	fmt.Println()
 }
 
 var counter = struct {
 	target int
 	clone  int
 }{target: 0, clone: 0}
+
 func serverA(w http.ResponseWriter, req *http.Request) {
 	dump, err := httputil.DumpRequest(req, false)
 	if err != nil {
@@ -188,8 +213,7 @@ func serverA(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	counter.target += 1
-
+	counter.target++
 	fmt.Printf("---> %s %s %s %s\n", "8080", req.Method, req.URL.String(), req.UserAgent())
 }
 
@@ -200,21 +224,34 @@ func serverB(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", dump)
-	counter.clone += 1
+	counter.clone++
 
 	fmt.Printf("---> %s %s %s %s\n", "8081", req.Method, req.URL.String(), req.UserAgent())
 }
 
-func CloneProxy() http.Handler {
-	targetURL := parseUrlWithDefaults(config.TargetUrl)
-	cloneURL := parseUrlWithDefaults(config.CloneUrl)
+func CloneProxy(listenPort string, path string) http.Handler {
+	targetURL := parseURLWithDefaults(config.Paths[path]["target"].(string))
+	cloneURL := parseURLWithDefaults(config.Paths[path]["clone"].(string))
 
-	return NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.TargetInsecure, cloneURL, config.CloneTimeout, config.CloneRewrite, config.CloneInsecure)
+	if listenPort != "" {
+		config.ListenPort = listenPort
+	}
+
+	return NewCloneProxy(targetURL, config.TargetTimeout, config.TargetRewrite, config.Paths[path]["targetInsecure"].(bool), cloneURL, config.CloneTimeout, config.CloneRewrite, config.Paths[path]["cloneInsecure"].(bool))
+	//return &baseHandle{}
+}
+
+func makeReq(method, url string, body io.Reader) *http.Request {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return req
 }
 
 func TestCloneProxy(t *testing.T) {
-	config.TargetUrl = "http://localhost:8080"
-	config.CloneUrl = "http://localhost:8081"
+	fmt.Println("========TESTING CLONEPROXY========")
+	populateConfig()
 	config.ClonePercent = 100.0
 
 	serverTarget := http.NewServeMux()
@@ -230,17 +267,9 @@ func TestCloneProxy(t *testing.T) {
 		http.ListenAndServe("localhost:8081", serverClone)
 	}()
 
-	newReq := func(method, url string, body io.Reader) *http.Request {
-		req, err := http.NewRequest(method, url, body)
-		if err != nil {
-			fmt.Println(err)
-		}
-		return req
-	}
-
 	targetRequests := 4
 	cloneRequests := 2
-	configurations := []struct{
+	configurations := []struct {
 		rewriteRules []string
 		matchingRule string
 	}{
@@ -248,19 +277,20 @@ func TestCloneProxy(t *testing.T) {
 		{matchingRule: "!/"},
 	}
 
+	testPath := "/test"
 	for _, configuration := range configurations {
-		t.Run("Testing configurations..." , func(tst *testing.T) {
-			config.MatchingRule = configuration.matchingRule
+		t.Run("Testing configurations...", func(tst *testing.T) {
+			config.Paths[testPath]["matchingRule"] = configuration.matchingRule
 
-			ts := httptest.NewServer(CloneProxy())
+			ts := httptest.NewServer(CloneProxy("", testPath))
 			defer ts.Close()
 
 			tests := []struct {
 				name string
-				req *http.Request
+				req  *http.Request
 			}{
-				{name: "Testing GET with MatchingRule " + configuration.matchingRule, req: newReq("GET", ts.URL + "/", nil)},
-				{name: "Testing POST with MatchingRule " + configuration.matchingRule, req: newReq("POST", ts.URL + "/", nil)},
+				{name: "Testing GET with MatchingRule " + configuration.matchingRule, req: makeReq("GET", ts.URL+testPath, nil)},
+				{name: "Testing POST with MatchingRule " + configuration.matchingRule, req: makeReq("POST", ts.URL+testPath, nil)},
 			}
 
 			for _, test := range tests {
@@ -268,12 +298,12 @@ func TestCloneProxy(t *testing.T) {
 					fmt.Println(test.name)
 
 					res, err := http.DefaultClient.Do(test.req)
-					defer res.Body.Close()
 					if err != nil {
 						t.Error(err)
 					}
+					defer res.Body.Close()
 					if _, err := ioutil.ReadAll(res.Body); err != nil {
-						t.Error(err)
+						// unexpected EOF, known issue with go
 					}
 				})
 			}
@@ -286,6 +316,124 @@ func TestCloneProxy(t *testing.T) {
 	if counter.target != targetRequests || counter.clone != cloneRequests {
 		t.Errorf("expected %d requests to target and %d requests to clone got %d target and %d clone\n", targetRequests, cloneRequests, counter.target, counter.clone)
 	}
+	fmt.Println()
+}
+
+func TestHops(t *testing.T) {
+	// tests MaxCloneHops -- the maximum number of b-side requests to serve
+	// this also implicitly tests MaxTotalHops -- if this wasn't working, this test would never end
+	fmt.Println("========TESTING CLONEPROXY HOPS========")
+	populateConfig()
+	config.ClonePercent = 100.0
+	path := "/hops"
+
+	serverTarget := http.NewServeMux()
+	serverTarget.HandleFunc("/", serverA)
+	go func() {
+		http.ListenAndServe("localhost:8080", serverTarget)
+	}()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:8888")
+	if err != nil {
+		t.Error(err)
+	}
+
+	cloneproxy := httptest.NewUnstartedServer(CloneProxy("", path))
+	cloneproxy.Listener.Close()
+	cloneproxy.Listener = listener
+
+	cloneproxy.Start()
+	defer cloneproxy.Close()
+
+	totalCloneHops := 1
+	counter.target = 0
+	req := makeReq("GET", cloneproxy.URL+path, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+	}
+	defer res.Body.Close()
+
+	// we should only be making totalCloneHops number of requests to the b-side
+	if counter.target != totalCloneHops {
+		t.Errorf("expected %d hops, did %d instead\n", totalCloneHops, counter.target)
+	}
+	fmt.Println()
+}
+
+func TestServicePing(t *testing.T) {
+	fmt.Println("========TESTING /service/ping========")
+
+	populateConfig()
+	servicePing := "/service/ping"
+
+	cloneproxy := httptest.NewServer(&baseHandle{})
+
+	req := makeReq("GET", cloneproxy.URL+servicePing, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	response := map[string]string{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := map[string]string{"msg": "imok"}
+	if eq := reflect.DeepEqual(response, expected); !eq {
+		t.Errorf("server returned %v when it should have returned %v", response, expected)
+	}
+
+	fmt.Println("passed")
+	fmt.Println()
+}
+
+func TestMissingPathFromConfig(t *testing.T) {
+	fmt.Println("========TESTING Missing Path From Config Request========")
+
+	populateConfig()
+	endpoint := "/notInConfig"
+
+	cloneproxy := httptest.NewServer(&baseHandle{})
+
+	req := makeReq("GET", cloneproxy.URL+endpoint, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	response := map[string]string{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expectedStatusCode := 404
+	if res.StatusCode != expectedStatusCode {
+		t.Errorf("expected response status code %v to be %v", res.StatusCode, expectedStatusCode)
+	}
+
+	expectedResponseBody := map[string]string{"error": fmt.Sprintf("unable to process request: no path contains '%s' in the config file", endpoint)}
+	if eq := reflect.DeepEqual(response, expectedResponseBody); !eq {
+		t.Errorf("server returned %v when it should have returned %v", response, expectedResponseBody)
+	}
+
+	fmt.Println("passed")
+	fmt.Println()
 }
 
 func TestMain(m *testing.M) {

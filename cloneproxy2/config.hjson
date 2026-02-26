@@ -2,19 +2,20 @@
         # show version number
         "Version": false
 
+        # log time taken to process http requests in ms
+        "EnableRequestProfiling": true
+
         # cloneproxy maximum tcp sockets for use
         "ExpandMaxTcp": 4096
 
         # write the logs in json for easier processing
-        "JsonLogging": false
+        "JsonLogging": true
 
         # loglevel log level 0=Error, 1=Warning, 2=Info, 3=Debug, 5=VerboseDebug
-        "LogLevel": 1
+        "LogLevel": 5
 
         # where to write the logs. set to the empty string or leave blank if you don't want to write to disk
-        "LogFilePath": "/home/personal/Downloads/cloneproxy.log"
-
-
+        "LogFilePath": "/home/jeff/Downloads/cloneproxy.log"
 
         # server port to listen for requests
         "ListenPort": ":8888"
@@ -28,10 +29,8 @@
         # path to the TLS private key file
         "TlsKey": ""
 
-
-
-        # where target (A-Side) traffic goes
-        "TargetUrl": "http://localhost:8080"
+        # set the min TLS version (e.g., 1.1, 1.2)
+        "MinVerTls": 1.0
 
         # timeout in seconds for target (A-Side) traffic
         "TargetTimeout": 5
@@ -39,52 +38,79 @@
         # rewrite the host header when proxying target (A-Side) traffic
         "TargetRewrite": false
 
-        # insecure SSL validation for target (A-Side) traffic
-        "TargetInsecure": false
-
-
-
-        # where clone (B-Side) traffic goes
-        # if empty, you can set ClonePercent to 0.0 or MatchingRule to !
-        # if you don't want the log to output "Proxy clone Request Unfulfilled"
-        "CloneUrl": "http://localhost:8081"
-
         # timeout in seconds for clone (B-Side) traffic
         "CloneTimeout": 5
 
         # rewrite the host header when proxing clone (B-Side) traffic
         "CloneRewrite": false
 
-        # insecure SSL validation for clone (B-Side) traffic
-        "CloneInsecure": false
-
         # float64 percentage of traffic to send to clone (B Side)
         "ClonePercent": 100.0
 
+        # the maximum number of cloneproxied requests to serve (cloneproxied requests strictly exceeding this will be dropped)
+        "MaxTotalHops": 2
 
-        # whether to rewrite the clone (B-side) URL
-        "Rewrite": false
-
-        # Specify the pattern to match in the URI and what should be substituted in its place
-        # Each pattern must have an accompanying substitution and vice versa
-        # Multiple Pattern-Substitution rules are handled sequentially
-        # e.g. the original URI is /localhost:8080
-        #   :\\d+$              :8080/hi    URI is now localhost:8080/hi
-        #   :\\d+/[a-z]{2}$     :8080/bye   URI is now localhost:8080/bye
-        "RewriteRules":
-        [
-            # pattern   substitution
-            "\/"        "localhost:8081"
-            ":\\d+$"    ":8080/"
-        ]
+        # the number of cloneproxied requests to serve for the b-side (cloneproxied requests greater than or equal to this will not serve b-side)
+        "MaxCloneHops": 1
 
 
-        # How to:
-        #   - Always send to clone (B-side)
-        #       - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
-        #   - Send to clone (B-side) only if the target URL matches a pattern
-        #       - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
-        #   - Send to clone (B-side) only if the target URL does not match a pattern
-        #       - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
-        "MatchingRule": "/"
+        # Maps the request URI (path) to the desired clone (B-side)
+        # Additional info:
+        #   - clone (B-Side) traffic
+        #       - if empty, you can set ClonePercent to 0.0 or MatchingRule to !
+        #       - if you don't want the log to output "Proxy clone Request Unfulfilled"
+        #
+        #   - RewriteRules
+        #       Specify the pattern to match in the URI and what should be substituted in its place
+        #       Each pattern must have an accompanying substitution and vice versa
+        #       Multiple Pattern-Substitution rules are handled sequentially
+        #       e.g. the original URI is http://localhost:8080/foo
+        #           \\w{3}$            hi         URI is now http://localhost:8080/hi
+        #           hi$                bye        URI is now http://localhost:8080/bye
+        #
+        #   - MatchingRule
+        #       How to:
+        #           - Always send to clone (B-side)
+        #               - Set MatchingRule to the empty string, e.g. "MatchingRule": ""
+        #           - Send to clone (B-side) only if the target URL matches a pattern
+        #               - Set MatchingRule to that pattern, e.g. "MatchingRule": "localhost"
+        #           - Send to clone (B-side) only if the target URL does not match a pattern
+        #               - Prefix '!' to the pattern, e.g. "MatchingRule": "!localhost"
+        "Paths":
+        {
+            # path                          # target (A-side) and clone (B-side) to send to, with rewrite and matching rules
+            "/project/iink/":               {
+                                                "target": "http://localhost:8080"
+                                                "clone":  "http://localhost:8081"
+                                                # insecure SSL validation for target (A-Side) traffic
+                                                "targetInsecure": false
+                                                # insecure SSL validation for clone (B-Side) traffic
+                                                "cloneInsecure": false
+                                                # whether to rewrite the clone (B-side) URL
+                                                "rewrite": false
+                                                "rewriteRules":
+                                                [
+                                                    # pattern   substitution
+                                                    "\/"        "/test"
+                                                ]
+                                                "matchingRule": "/"
+                                            }
+
+            "/":                            {
+                                                "target": "https://localhost:8888/"
+                                                "clone":  "https://localhost:8888/"
+                                                # insecure SSL validation for target (A-Side) traffic
+                                                "targetInsecure": false
+                                                # insecure SSL validation for clone (B-Side) traffic
+                                                "cloneInsecure": false
+                                                # whether to rewrite the clone (B-side) URL
+                                                "rewrite": false
+                                                "rewriteRules":
+                                                [
+                                                    # pattern   substitution
+                                                    "\/"        "/test"
+                                                ]
+                                                "matchingRule": "/"
+                                            }
+        }
 }
