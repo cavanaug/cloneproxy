@@ -10,14 +10,14 @@ Golang reverse proxy with support to clone requests to a second (duplicate) dest
 
 ## Requirements
 
-- [Go 1.8 or greater](https://golang.org/doc/install)
+- [Go 1.18 or greater](https://golang.org/doc/install)
 
 ## Quick Start
 
 1. Clone the repository:
 
    ```bash
-   $ git clone git@github.com:Jeff457/cloneproxy.git
+   $ git clone git@github.com:cavanaug/cloneproxy.git
 
     Cloning into 'cloneproxy'...
     remote: Enumerating objects: 83, done.
@@ -43,18 +43,20 @@ Golang reverse proxy with support to clone requests to a second (duplicate) dest
    ```bash
    # builds the binary for linux
    $ make release
-   env GOOS=linux GOARCH=amd64 go build -ldflags "-X main.VERSION=4.0.2 -X main.minversion=`date -u +%Y%m%d.%H%M%S`" -o build/cloneproxy cloneproxy.go
+   env GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags "-X main.VERSION=4.0.2 -X main.minversion=`date -u +%Y%m%d.%H%M%S`" -o build/cloneproxy cloneproxy.go
 
    $ ./build/cloneproxy
    {"Version":"4.0.2","BuildDate":"20200508.233324"}
    ```
+
+   **Note:** If you encounter VCS-related errors during build, use the `-buildvcs=false` flag to disable version control stamping.
 
 ## Running Tests
 
 Make sure you've gone through and completed the steps outlined in [Quick Start](#quick-start)
 
 ```bash
-$ go test
+$ go test -buildvcs=false
 ========TESTING REWRITE========
 Testing regex...
         Testing rewrite Rules: 'wrong_queue_name, right_queue_name'... passed

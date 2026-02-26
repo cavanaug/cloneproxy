@@ -14,10 +14,10 @@ install:
 	go get -d ./...
 
 release:
-	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o build/${BINARY} ${PROJECT}.go
+	GOOS=linux GOARCH=amd64 go build -buildvcs=false ${LDFLAGS} -o build/${BINARY} ${PROJECT}.go
 
 macrelease:
-	GOOS=darwin GOARCH=amd64 go build ${LDFLAGS} -o build/${OSXBINARY} ${PROJECT}.go
+	GOOS=darwin GOARCH=amd64 go build -buildvcs=false ${LDFLAGS} -o build/${OSXBINARY} ${PROJECT}.go
 
 clean:
 	if [ -f build/${BINARY} ] ; then rm build/${BINARY} ; fi
