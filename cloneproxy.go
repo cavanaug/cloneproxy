@@ -558,7 +558,7 @@ func (p *ReverseClonedProxy) ServeTargetHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	sha := sha1Body(body, headersToRemove)
-	fmt.Fprintf(rw, string(body))
+	fmt.Fprint(rw, string(body))
 
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
@@ -1098,9 +1098,9 @@ func NewCloneProxy(target *url.URL, targetTimeout int, targetRewrite bool, targe
 	}
 }
 
-//func expvarVersion() interface{} {
-//	return build
-//}
+//	func expvarVersion() interface{} {
+//		return build
+//	}
 func init() {
 	//	expvar.Publish("version", expvar.Func(expvarVersion))
 	//	expvar.Publish("cmdline", Func(cmdline))
