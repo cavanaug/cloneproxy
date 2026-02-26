@@ -2,11 +2,23 @@
 
 Golang reverse proxy with support to clone requests to a second (duplicate) destination for debugging etc...
 
+**Key Features:**
+- 🔄 Traffic cloning/mirroring to secondary destination
+- ✅ Response validation and comparison (SHA1 hash)
+- 📊 Mismatch detection and detailed logging
+- ⚙️ Configurable timeouts for both target and clone
+- 🎯 Path-based routing and configuration
+- 🔒 TLS support with configurable minimum version
+- 📈 HTTP profiling with pprof
+
+> **Looking for alternatives?** See [ALTERNATIVES.md](ALTERNATIVES.md) for a comparison with NGINX, Envoy, and other traffic mirroring tools.
+
 - [cloneproxy](#cloneproxy)
   - [Requirements](#requirements)
   - [Quick Start](#quick-start)
   - [Running Tests](#running-tests)
   - [Configuring cloneproxy](#configuring-cloneproxy)
+  - [Alternatives](#alternatives)
 
 ## Requirements
 
@@ -126,4 +138,23 @@ $ ./build/cloneproxy -config-file <path-to-config>
 ```
 
 You can find a description for each configurable parameter in `config.hjson`, but you will probably find the `Paths` field to be the most interesting, as it maps the requested path to the target (A-side) and clone (B-side); essentially, it tells cloneproxy how to transform the requests it receives.
+
+## Alternatives
+
+Wondering how cloneproxy compares to other traffic mirroring tools like **NGINX**, **Envoy**, or **miffy**?
+
+See [ALTERNATIVES.md](ALTERNATIVES.md) for a comprehensive comparison including:
+- Feature matrix comparing cloneproxy with NGINX, Envoy, miffy, and more
+- Detailed pros/cons for each tool
+- Use case recommendations
+- Configuration examples
+- Architecture patterns
+
+**Quick comparison:**
+- **NGINX** - Built-in mirroring but no response validation; slow mirrors throttle originals
+- **cloneproxy** - Purpose-built for response validation and mismatch detection
+- **Envoy** - Enterprise service mesh with advanced routing
+- **miffy** - Kafka-based async analysis for high-volume scenarios
+
+**Choose cloneproxy when response correctness matters!**
 
